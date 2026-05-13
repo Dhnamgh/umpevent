@@ -9,15 +9,16 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 section[data-testid="stSidebar"] {
-    width: 320px !important;
+    width: 360px !important;
 }
+
 .menu-btn {
     background-color: #1976d2;
     color: white;
     padding: 10px;
     border-radius: 6px;
+    margin-bottom: 8px;
     text-align: center;
-    margin-right: 10px;
     font-weight: bold;
 }
 </style>
@@ -46,26 +47,15 @@ def load_data():
     return df
 
 df = load_data()
-
 today = datetime.today()
 
-# ================= MENU NGANG =================
-col1, col2, col3, col4 = st.columns(4)
+# ================= MENU SIDEBAR =================
+st.sidebar.title("📋 MENU")
 
-with col1:
-    if st.button("📊 Dashboard"):
-        st.session_state["menu"] = "Dashboard"
-with col2:
-    if st.button("📈 Tổng hợp"):
-        st.session_state["menu"] = "Tổng hợp"
-with col3:
-    if st.button("🤖 Trợ giúp"):
-        st.session_state["menu"] = "Trợ giúp"
-with col4:
-    if st.button("📞 Liên hệ"):
-        st.session_state["menu"] = "Liên hệ"
-
-menu = st.session_state.get("menu", "Dashboard")
+menu = st.sidebar.radio(
+    "",
+    ["Dashboard", "Tổng hợp", "Trợ giúp", "Phê duyệt SK", "Liên hệ"]
+)
 
 # ================= FILTER =================
 donvi_list = sorted(df["donvi"].dropna().unique())
@@ -87,32 +77,24 @@ if menu == "Dashboard":
 
     st.title("📊 Dashboard")
 
-    # ===== KPI =====
-    week_start = today - timedelta(days=7)
-
-    df_week = df[df["start"] >= week_start]
-    df_month = df[
-        (df["start"].dt.month == today.month) &
-        (df["start"].dt.year == today.year)
-    ]
     df_year = df[df["start"].dt.year == today.year]
+    df_month = df_year[df_year["start"].dt.month == today.month]
+    df_week = df_year[df_year["start"] >= today - timedelta(days=7)]
 
+    # KPI
     c1, c2, c3 = st.columns(3)
-    c1.metric("Trong tuần", len(df_week))
-    c2.metric("Trong tháng", len(df_month))
-    c3.metric("Trong năm", len(df_year))
+    c1.metric("Tuần", len(df_week))
+    c2.metric("Tháng", len(df_month))
+    c3.metric("Năm", len(df_year))
 
-    # ===== LIST MONTH =====
+    # danh sách tháng
     st.subheader("📅 Sự kiện trong tháng")
+    st.dataframe(df_month.sort_values("start"), use_container_width=True)
 
-    df_month_sorted = df_month.sort_values("start")
-    st.dataframe(df_month_sorted, use_container_width=True)
-
-    # ===== GANTT =====
-    st.subheader("📈 Timeline")
-
+    # timeline chỉ năm hiện hành
+    st.subheader("📈 Timeline năm hiện hành")
     fig = px.timeline(
-        df_f,
+        df_year,
         x_start="start",
         x_end="end",
         y="event",
@@ -123,51 +105,38 @@ if menu == "Dashboard":
 
 # ================= TỔNG HỢP =================
 elif menu == "Tổng hợp":
-
     st.title("📊 Tổng hợp")
 
-    df_month = df[
-        (df["start"].dt.month == today.month) &
-        (df["start"].dt.year == today.year)
-    ]
-
-    df_ytd = df[df["start"].dt.year == today.year]
+    df_year = df[df["start"].dt.year == today.year]
+    df_month = df_year[df_year["start"].dt.month == today.month]
 
     st.metric("Tháng", len(df_month))
-    st.metric("Năm", len(df_ytd))
+    st.metric("Năm", len(df_year))
 
 # ================= TRỢ GIÚP =================
 elif menu == "Trợ giúp":
 
     st.title("🤖 Trợ giúp")
 
-    q = st.text_input("Hỏi:")
+    q = st.text_input("Nhập câu hỏi")
 
     if q:
         q = q.lower()
 
-        # tuần
         if "tuần" in q:
-            week = df[
-                (df["start"] >= today - timedelta(days=7)) &
-                (df["start"] <= today)
-            ]
-            st.dataframe(week)
+            res = df[df["start"] >= today - timedelta(days=7)]
+            st.dataframe(res)
 
-        # tháng ✅ FIX
         elif "tháng" in q:
-            month = df[
+            res = df[
                 (df["start"].dt.month == today.month) &
                 (df["start"].dt.year == today.year)
             ]
-            st.dataframe(month)
+            st.dataframe(res)
 
-        # mới nhất
         elif "mới" in q:
-            latest = df.sort_values("start", ascending=False).head(5)
-            st.dataframe(latest)
+            st.dataframe(df.sort_values("start", ascending=False).head(5))
 
-        # hỗ trợ
         elif "hỗ trợ" in q:
             support_df = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
 
@@ -175,16 +144,46 @@ elif menu == "Trợ giúp":
 
             if "support" in support_df.columns:
                 st.subheader("🔧 Nội dung hỗ trợ")
-                for item in support_df["support"].dropna().unique():
-                    st.markdown(f"- {item}")
+                for s in support_df["support"].dropna().unique():
+                    st.markdown(f"- {s}")
 
-        # đông người
-        elif "đông" in q or "100" in q:
-            crowded = df[df["people"] > 100]
-            st.dataframe(crowded)
+        elif "đông" in q:
+            if "people" in df.columns:
+                st.dataframe(df[df["people"] > 100])
 
         else:
             st.warning("Chưa hiểu câu hỏi")
+
+# ================= PHÊ DUYỆT =================
+elif menu == "Phê duyệt SK":
+
+    st.title("🔐 Phê duyệt sự kiện")
+
+    password = st.text_input("Nhập mật khẩu", type="password")
+
+    if "auth" not in st.session_state:
+        st.session_state["auth"] = False
+
+    if password:
+        if password == st.secrets["auth"]["password"]:
+            st.session_state["auth"] = True
+        else:
+            st.error("Sai mật khẩu")
+
+    if st.session_state["auth"]:
+        st.success("Đã đăng nhập")
+
+        df["status"] = df.get("status", "Chờ")
+
+        choice = st.selectbox("Chọn trạng thái", ["Thống nhất", "Chưa thống nhất", "Cần liên hệ"])
+
+        event = st.selectbox("Chọn sự kiện", df["event"])
+
+        if st.button("Cập nhật"):
+            df.loc[df["event"] == event, "status"] = choice
+            st.success(f"Đã cập nhật: {event} → {choice}")
+
+        st.dataframe(df[["event", "status"]])
 
 # ================= LIÊN HỆ =================
 elif menu == "Liên hệ":
@@ -194,18 +193,14 @@ elif menu == "Liên hệ":
     st.markdown("""
 **Phòng Hành chính Tổng hợp**
 
-Địa chỉ: 217 Hồng Bàng, Phường Chợ Lớn, TP. Hồ Chí Minh  
+Địa chỉ: 217 Hồng Bàng, Phường Chợ Lớn, TP.HCM  
 
-ĐT: (+84-28) 3855 8411 - (+84-28) 3853 7949 - (+84-28) 3855 5780  
-
-Fax: (+84-28) 3855 2304  
+ĐT: (+84-28) 3855 8411 - 3853 7949 - 3855 5780  
 
 Email: <a href="mailto:hanhchinh@ump.edu.vn">hanhchinh@ump.edu.vn</a>
 """, unsafe_allow_html=True)
 
 # ================= FOOTER =================
 st.markdown("---")
-st.markdown(
-    "<center>© TS. Đào Hồng Nam</center>",
-    unsafe_allow_html=True
-)
+st.markdown("<center>© TS. Đào Hồng Nam</center>", unsafe_allow_html=True)
+``
