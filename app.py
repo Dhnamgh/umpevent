@@ -10,10 +10,7 @@ st.markdown("""
 <style>
 html, body {font-size:16px; color:#000;}
 section[data-testid="stSidebar"] {width:360px !important;}
-button[kind="primary"] {
-    background-color:#1976d2;
-    color:white;
-}
+button[kind="primary"] {background-color:#1976d2; color:white;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -53,13 +50,12 @@ donvi_list = sorted(df["donvi"].dropna().unique())
 selected = st.sidebar.multiselect(
     "Chọn đơn vị",
     ["Toàn trường"] + donvi_list,
-    default=["Phòng Hành chính Tổng hợp"]
+    default=["Toàn trường"]
 )
 
-# 👉 HIỂN THỊ đơn vị đang chọn
 st.sidebar.write("✅ Đang chọn:", ", ".join(selected))
 
-if "Toàn trường" in selected or len(selected) == 0:
+if "Toàn trường" in selected:
     df_f = df
 else:
     df_f = df[df["donvi"].isin(selected)]
@@ -67,29 +63,27 @@ else:
 # ================= DASHBOARD =================
 if menu == "Dashboard":
 
-    # ✅ BUTTON THAY SELECTBOX
+    st.subheader(f"📅 Lịch toàn trường - Tháng {today.month}/{today.year}")
+
+    st.write("👉 Mặc định hiển thị toàn trường theo tháng hiện hành. Có thể chọn tuần hoặc năm bên dưới.")
+
     col1, col2, col3 = st.columns(3)
 
     if "view" not in st.session_state:
         st.session_state["view"] = "Tháng"
 
-    if col1.button("📅 Tháng"):
-        st.session_state["view"] = "Tháng"
-    if col2.button("📆 Tuần"):
+    if col1.button("📆 Tuần"):
         st.session_state["view"] = "Tuần"
+    if col2.button("📅 Tháng"):
+        st.session_state["view"] = "Tháng"
     if col3.button("📊 Năm"):
         st.session_state["view"] = "Năm"
 
     view = st.session_state["view"]
 
     df_year = df_f[df_f["start"].dt.year == today.year]
-
-    df_week = df_year[
-        (df_year["start"] >= today - timedelta(days=7)) &
-        (df_year["start"] <= today)
-    ]
-
     df_month = df_year[df_year["start"].dt.month == today.month]
+    df_week = df_year[(df_year["start"] >= today - timedelta(days=7)) & (df_year["start"] <= today)]
 
     if view == "Tháng":
         df_view = df_month
@@ -98,7 +92,7 @@ if menu == "Dashboard":
     else:
         df_view = df_year
 
-    # ✅ KPI đúng
+    # KPI đúng
     c1,c2,c3 = st.columns(3)
     c1.metric("Tuần", len(df_week))
     c2.metric("Tháng", len(df_month))
@@ -113,16 +107,16 @@ if menu == "Dashboard":
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
 
-    mode = st.radio("Chọn báo cáo", ["Tháng", "Tuần", "Năm"], horizontal=True)
+    mode = st.radio("Chọn báo cáo", ["Tuần", "Tháng", "Năm"], horizontal=True)
 
     df_year = df_f[df_f["start"].dt.year == today.year]
-    df_week = df_year[(df_year["start"] >= today - timedelta(days=7)) & (df_year["start"] <= today)]
     df_month = df_year[df_year["start"].dt.month == today.month]
+    df_week = df_year[(df_year["start"] >= today - timedelta(days=7)) & (df_year["start"] <= today)]
 
-    if mode == "Tháng":
-        data = df_month
-    elif mode == "Tuần":
+    if mode == "Tuần":
         data = df_week
+    elif mode == "Tháng":
+        data = df_month
     else:
         data = df_year
 
@@ -136,7 +130,7 @@ elif menu == "Báo cáo":
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
 
-    st.subheader("⚠️ Cảnh báo trùng lịch")
+    st.subheader("⚠️ Cảnh báo trùng lịch (Tháng hiện tại + tháng kế tiếp)")
 
     next_month = today + timedelta(days=30)
 
@@ -145,33 +139,23 @@ elif menu == "Cảnh báo":
         (df["start"] <= next_month)
     ]
 
-    overlaps = []
-
     for i in range(len(df_check)):
         for j in range(i+1, len(df_check)):
             if df_check.iloc[i]["start"] == df_check.iloc[j]["start"]:
-                overlaps.append((
-                    df_check.iloc[i]["event"],
-                    df_check.iloc[j]["event"],
-                    df_check.iloc[i]["start"]
-                ))
 
-    if overlaps:
-        for a,b,t in overlaps:
-            st.warning(f"""
-Trùng lịch:
-- {a}
-- {b}
-Thời điểm: {t.strftime('%d/%m/%Y %H:%M')}
+                t = df_check.iloc[i]["start"].strftime("%H:%M %d/%m/%Y")
+
+                st.warning(f"""
+Trùng lịch: {t}  
+• {df_check.iloc[i]["event"]} (Địa điểm: {df_check.iloc[i]["location"]})  
+• {df_check.iloc[j]["event"]} (Địa điểm: {df_check.iloc[j]["location"]})
 """)
-    else:
-        st.success("Không có trùng lịch")
 
 # ================= TRỢ GIÚP =================
 elif menu == "Trợ giúp":
 
     st.subheader("🤖 Trợ giúp")
-    st.write("👉 Nhập câu hỏi bên dưới và nhấn Enter")
+    st.write("👉 Nhập câu hỏi và nhấn Enter")
 
     q = st.text_input("Nhập câu hỏi:")
 
@@ -205,7 +189,7 @@ elif menu == "Trợ giúp":
                 st.subheader("🔧 Tổng hợp hỗ trợ")
 
                 summary = res["support"].value_counts().reset_index()
-                summary.columns = ["Loại", "Số lượng"]
+                summary.columns = ["Loại hỗ trợ", "Số lượng"]
 
                 st.table(summary)
 
@@ -218,7 +202,7 @@ elif menu == "Trợ giúp":
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
 
-    st.subheader("📋 Sự kiện cần phê duyệt")
+    st.subheader("📋 Sự kiện cần phê duyệt (tháng hiện hành)")
 
     df_month = df[df["start"].dt.month == today.month]
     df_pending = df_month[df_month["start"] >= today]
@@ -231,7 +215,7 @@ elif menu == "Liên hệ":
     st.markdown("""
 ### 📞 Phòng Hành chính Tổng hợp
 
-217 Hồng Bàng, Phường Chợ Lớn, Thành phố Hồ Chí Minh
+217 Hồng Bàng, Phường Chợ Lớn, Thành phố Hồ Chí Minh  
 
 (+84-28) 3855 8411  
 (+84-28) 3853 7949  
