@@ -8,12 +8,11 @@ st.set_page_config(layout="wide")
 # ================= STYLE =================
 st.markdown("""
 <style>
-html, body {
-    font-size:16px;
-    color:#000 !important;
-}
-section[data-testid="stSidebar"] {
-    width:360px !important;
+html, body {font-size:16px; color:#000;}
+section[data-testid="stSidebar"] {width:360px !important;}
+button[kind="primary"] {
+    background-color:#1976d2;
+    color:white;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -21,11 +20,10 @@ section[data-testid="stSidebar"] {
 # ================= TITLE =================
 st.title("📊 Quản lý sự kiện UMP")
 
-# ================= LOAD DATA =================
+# ================= LOAD =================
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(st.secrets["data"]["csv_url"])
-
     df = df.rename(columns={
         "Tên sự kiện": "event",
         "Đơn vị phụ trách/ tổ chức": "donvi",
@@ -35,11 +33,9 @@ def load_data():
         "Số lượng": "people",
         "Hỗ trợ": "support"
     })
-
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
     df["end"] = df["end"].fillna(df["start"])
-
     return df
 
 df = load_data()
@@ -60,7 +56,10 @@ selected = st.sidebar.multiselect(
     default=["Phòng Hành chính Tổng hợp"]
 )
 
-if "Toàn trường" in selected or len(selected)==0:
+# 👉 HIỂN THỊ đơn vị đang chọn
+st.sidebar.write("✅ Đang chọn:", ", ".join(selected))
+
+if "Toàn trường" in selected or len(selected) == 0:
     df_f = df
 else:
     df_f = df[df["donvi"].isin(selected)]
@@ -68,65 +67,103 @@ else:
 # ================= DASHBOARD =================
 if menu == "Dashboard":
 
-    view = st.selectbox("Chọn chế độ hiển thị", ["Tháng", "Tuần", "Năm"], index=0)
+    # ✅ BUTTON THAY SELECTBOX
+    col1, col2, col3 = st.columns(3)
 
-    df_year = df[df["start"].dt.year == today.year]
+    if "view" not in st.session_state:
+        st.session_state["view"] = "Tháng"
+
+    if col1.button("📅 Tháng"):
+        st.session_state["view"] = "Tháng"
+    if col2.button("📆 Tuần"):
+        st.session_state["view"] = "Tuần"
+    if col3.button("📊 Năm"):
+        st.session_state["view"] = "Năm"
+
+    view = st.session_state["view"]
+
+    df_year = df_f[df_f["start"].dt.year == today.year]
+
+    df_week = df_year[
+        (df_year["start"] >= today - timedelta(days=7)) &
+        (df_year["start"] <= today)
+    ]
+
+    df_month = df_year[df_year["start"].dt.month == today.month]
 
     if view == "Tháng":
-        df_view = df_year[df_year["start"].dt.month == today.month]
-
+        df_view = df_month
     elif view == "Tuần":
-        df_view = df_year[
-            (df_year["start"] >= today - timedelta(days=7)) &
-            (df_year["start"] <= today)
-        ]
-
+        df_view = df_week
     else:
         df_view = df_year
 
-    # KPI
+    # ✅ KPI đúng
     c1,c2,c3 = st.columns(3)
-    c1.metric("Tuần", len(df_year[df_year["start"]>=today-timedelta(days=7)]))
-    c2.metric("Tháng", len(df_year[df_year["start"].dt.month==today.month]))
+    c1.metric("Tuần", len(df_week))
+    c2.metric("Tháng", len(df_month))
     c3.metric("Năm", len(df_year))
 
-    # Bảng dữ liệu
     st.dataframe(df_view.sort_values("start"), use_container_width=True)
 
-    # Timeline
-    fig = px.timeline(
-        df_year,
-        x_start="start",
-        x_end="end",
-        y="event",
-        color="donvi"
-    )
+    fig = px.timeline(df_year, x_start="start", x_end="end", y="event", color="donvi")
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
 
-    st.subheader("📊 Báo cáo theo đơn vị")
+    mode = st.radio("Chọn báo cáo", ["Tháng", "Tuần", "Năm"], horizontal=True)
 
-    summary = df.groupby("donvi").size().reset_index(name="count")
-    st.bar_chart(summary.set_index("donvi"))
+    df_year = df_f[df_f["start"].dt.year == today.year]
+    df_week = df_year[(df_year["start"] >= today - timedelta(days=7)) & (df_year["start"] <= today)]
+    df_month = df_year[df_year["start"].dt.month == today.month]
+
+    if mode == "Tháng":
+        data = df_month
+    elif mode == "Tuần":
+        data = df_week
+    else:
+        data = df_year
+
+    summary = data.groupby("donvi").size().reset_index(name="count")
+
+    fig = px.bar(summary, x="donvi", y="count", text="count")
+    fig.update_traces(textposition='outside')
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
 
     st.subheader("⚠️ Cảnh báo trùng lịch")
 
-    overlap = []
+    next_month = today + timedelta(days=30)
 
-    for i in range(len(df)):
-        for j in range(i+1, len(df)):
-            if df.iloc[i]["start"] == df.iloc[j]["start"]:
-                overlap.append((df.iloc[i]["event"], df.iloc[j]["event"]))
+    df_check = df[
+        (df["start"] >= today) &
+        (df["start"] <= next_month)
+    ]
 
-    if overlap:
-        for a, b in overlap:
-            st.warning(f"Trùng lịch: {a} ↔ {b}")
+    overlaps = []
+
+    for i in range(len(df_check)):
+        for j in range(i+1, len(df_check)):
+            if df_check.iloc[i]["start"] == df_check.iloc[j]["start"]:
+                overlaps.append((
+                    df_check.iloc[i]["event"],
+                    df_check.iloc[j]["event"],
+                    df_check.iloc[i]["start"]
+                ))
+
+    if overlaps:
+        for a,b,t in overlaps:
+            st.warning(f"""
+Trùng lịch:
+- {a}
+- {b}
+Thời điểm: {t.strftime('%d/%m/%Y %H:%M')}
+""")
     else:
         st.success("Không có trùng lịch")
 
@@ -134,45 +171,47 @@ elif menu == "Cảnh báo":
 elif menu == "Trợ giúp":
 
     st.subheader("🤖 Trợ giúp")
-
     st.write("👉 Nhập câu hỏi bên dưới và nhấn Enter")
 
-    q = st.text_input(
-        "Nhập câu hỏi:",
-        placeholder="Ví dụ: sự kiện trong tháng này có bao nhiêu?"
-    )
+    q = st.text_input("Nhập câu hỏi:")
 
     if q:
         q = q.lower()
 
+        df_year = df[df["start"].dt.year == today.year]
+
         if "tuần" in q:
-            res = df[
-                (df["start"] >= today - timedelta(days=7)) &
-                (df["start"] <= today + timedelta(days=7))
-            ]
+            res = df_year[(df_year["start"] >= today - timedelta(days=7)) & (df_year["start"] <= today+timedelta(days=7))]
             st.dataframe(res)
 
         elif "tháng" in q:
-            res = df[df["start"].dt.month == today.month]
+            res = df_year[df_year["start"].dt.month == today.month]
             st.dataframe(res)
+
+        elif "năm" in q:
+            st.dataframe(df_year)
+
+        elif "hỗ trợ" in q:
+            next_month = today + timedelta(days=30)
+
+            res = df[
+                (df["start"] >= today) &
+                (df["start"] <= next_month)
+            ]
+
+            st.dataframe(res)
+
+            if "support" in res.columns:
+                st.subheader("🔧 Tổng hợp hỗ trợ")
+
+                summary = res["support"].value_counts().reset_index()
+                summary.columns = ["Loại", "Số lượng"]
+
+                st.table(summary)
 
         elif "đông" in q:
             st.dataframe(df[df["people"] > 100])
 
-        elif "hỗ trợ" in q:
-            support_df = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
-
-            st.dataframe(support_df)
-
-            if "support" in support_df.columns:
-                st.subheader("🔧 Tổng hợp hỗ trợ")
-
-                st.table(
-                    support_df["support"]
-                    .value_counts()
-                    .reset_index()
-                    .rename(columns={"index":"Loại hỗ trợ", "support":"Số lượng"})
-                )
         else:
             st.info("Chưa hiểu câu hỏi")
 
@@ -181,16 +220,10 @@ elif menu == "Phê duyệt":
 
     st.subheader("📋 Sự kiện cần phê duyệt")
 
-    st.write("👉 Xem danh sách và vào SharePoint để phê duyệt")
-
-    df_year = df[df["start"].dt.year == today.year]
-    df_month = df_year[df_year["start"].dt.month == today.month]
+    df_month = df[df["start"].dt.month == today.month]
     df_pending = df_month[df_month["start"] >= today]
 
-    if len(df_pending) > 0:
-        st.dataframe(df_pending.sort_values("start"), use_container_width=True)
-    else:
-        st.info("Không có sự kiện cần phê duyệt")
+    st.dataframe(df_pending.sort_values("start"), use_container_width=True)
 
 # ================= LIÊN HỆ =================
 elif menu == "Liên hệ":
@@ -198,9 +231,8 @@ elif menu == "Liên hệ":
     st.markdown("""
 ### 📞 Phòng Hành chính Tổng hợp
 
-Địa chỉ: 217 Hồng Bàng, Phường Chợ Lớn, TP. Hồ Chí Minh  
+217 Hồng Bàng, Phường Chợ Lớn, Thành phố Hồ Chí Minh
 
-Điện thoại:  
 (+84-28) 3855 8411  
 (+84-28) 3853 7949  
 (+84-28) 3855 5780  
