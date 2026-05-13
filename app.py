@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
-import gspread
-from google.oauth2.service_account import Credentials
-from openai import OpenAI
+import smtplib
+from email.mime.text import MIMEText
 
 st.set_page_config(layout="wide")
 
-# ================= STYLE =================
+# ================= UI =================
 st.markdown("""
 <style>
 html, body {font-size:16px; color:#000;}
@@ -16,11 +15,12 @@ section[data-testid="stSidebar"] {width:360px !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================= LOAD DATA =================
+st.title("📊 Quản lý sự kiện UMP")
+
+# ================= LOAD =================
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(st.secrets["data"]["csv_url"])
-
     df = df.rename(columns={
         "Tên sự kiện": "event",
         "Đơn vị phụ trách/ tổ chức": "donvi",
@@ -30,59 +30,18 @@ def load_data():
         "Số lượng": "people",
         "Hỗ trợ": "support"
     })
-
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
     df["end"] = df["end"].fillna(df["start"])
-
     return df
 
 df = load_data()
 today = datetime.today()
 
-# ================= GOOGLE SHEETS =================
-def connect_sheet():
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
-    return gspread.authorize(creds)
-
-def update_status(event, status):
-    client = connect_sheet()
-    sheet = client.open_by_url(st.secrets["data"]["sheet_url"]).sheet1
-    data = sheet.get_all_records()
-
-    for i, row in enumerate(data):
-        if row["Tên sự kiện"] == event:
-            sheet.update_cell(i+2, len(row)+1, status)
-            return True
-    return False
-
-# ================= AI =================
-def ask_ai(q):
-    client = OpenAI(api_key=st.secrets["ai"]["api_key"])
-    sample = df.head(50).to_string()
-
-    prompt = f"""
-Dữ liệu:
-{sample}
-
-Câu hỏi: {q}
-
-Trả lời ngắn gọn.
-"""
-
-    res = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role":"user","content":prompt}]
-    )
-
-    return res.choices[0].message.content
-
 # ================= MENU =================
-menu = st.sidebar.radio("MENU",
-    ["Dashboard", "Tổng hợp", "Trợ giúp", "Phê duyệt SK", "Liên hệ"]
+menu = st.sidebar.radio(
+    "MENU",
+    ["Dashboard", "Báo cáo", "Cảnh báo", "Trợ giúp", "Phê duyệt", "Liên hệ"]
 )
 
 # ================= FILTER =================
@@ -95,65 +54,158 @@ selected = st.sidebar.multiselect(
 )
 
 if "Toàn trường" in selected or len(selected)==0:
-    df_f = df.copy()
+    df_f = df
 else:
     df_f = df[df["donvi"].isin(selected)]
 
 # ================= DASHBOARD =================
-if menu=="Dashboard":
+if menu == "Dashboard":
 
-    df_year = df[df["start"].dt.year==today.year]
-    df_month = df_year[df_year["start"].dt.month==today.month]
-    df_week = df_year[df_year["start"]>=today-timedelta(days=7)]
+    view = st.selectbox("Chọn chế độ", ["Tháng", "Tuần", "Năm"], index=0)
+
+    df_year = df[df["start"].dt.year == today.year]
+
+    if view == "Tháng":
+        df_view = df_year[df_year["start"].dt.month == today.month]
+
+    elif view == "Tuần":
+        df_view = df_year[
+            (df_year["start"] >= today - timedelta(days=7)) &
+            (df_year["start"] <= today)
+        ]
+
+    else:
+        df_view = df_year
 
     c1,c2,c3 = st.columns(3)
-    c1.metric("Tuần", len(df_week))
-    c2.metric("Tháng", len(df_month))
+    c1.metric("Tuần", len(df_year[df_year["start"]>=today-timedelta(days=7)]))
+    c2.metric("Tháng", len(df_year[df_year["start"].dt.month==today.month]))
     c3.metric("Năm", len(df_year))
 
-    st.subheader("Sự kiện tháng")
-    st.dataframe(df_month.sort_values("start"))
+    st.dataframe(df_view.sort_values("start"), use_container_width=True)
 
-    st.subheader("Timeline")
-    fig=px.timeline(df_year, x_start="start", x_end="end", y="event", color="donvi")
+    fig = px.timeline(df_year, x_start="start", x_end="end", y="event", color="donvi")
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
-# ================= AI =================
-elif menu=="Trợ giúp":
-    q = st.text_input("Hỏi")
+# ================= BÁO CÁO =================
+elif menu == "Báo cáo":
+
+    st.subheader("📊 Báo cáo theo đơn vị")
+
+    summary = df.groupby("donvi").size().reset_index(name="count")
+    st.bar_chart(summary.set_index("donvi"))
+
+# ================= CẢNH BÁO =================
+elif menu == "Cảnh báo":
+
+    st.subheader("⚠️ Cảnh báo trùng lịch")
+
+    overlap = []
+
+    for i in range(len(df)):
+        for j in range(i+1, len(df)):
+            if df.iloc[i]["start"] == df.iloc[j]["start"]:
+                overlap.append((df.iloc[i]["event"], df.iloc[j]["event"]))
+
+    if overlap:
+        for a, b in overlap:
+            st.warning(f"Trùng: {a} ↔ {b}")
+    else:
+        st.success("Không có trùng lịch")
+
+# ================= TRỢ GIÚP =================
+elif menu == "Trợ giúp":
+
+    st.subheader("🤖 Trợ giúp AI")
+    st.write("👉 Nhập câu hỏi bên dưới rồi nhấn Enter")
+
+    q = st.text_input("Nhập câu hỏi:")
+
     if q:
-        st.write(ask_ai(q))
+        q = q.lower()
 
-# ================= APPROVAL =================
-elif menu=="Phê duyệt SK":
+        if "tuần" in q:
+            res = df[
+                (df["start"] >= today - timedelta(days=7)) &
+                (df["start"] <= today + timedelta(days=7))
+            ]
+            st.dataframe(res)
 
-    pwd = st.text_input("Mật khẩu", type="password")
+        elif "tháng" in q:
+            res = df[df["start"].dt.month == today.month]
+            st.dataframe(res)
 
-    if pwd==st.secrets["auth"]["password"]:
+        elif "đông" in q:
+            st.dataframe(df[df["people"] > 100])
 
-        event = st.selectbox("Sự kiện", df["event"])
+        elif "hỗ trợ" in q:
+            support_df = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
+
+            st.dataframe(support_df)
+
+            if "support" in support_df.columns:
+                st.subheader("🔧 Tổng hợp")
+                st.table(
+                    support_df["support"]
+                    .value_counts()
+                    .reset_index()
+                    .rename(columns={"index":"Loại", "support":"Số lượng"})
+                )
+
+        else:
+            st.info("Chưa hiểu câu hỏi")
+
+# ================= PHÊ DUYỆT =================
+elif menu == "Phê duyệt":
+
+    pwd = st.text_input("Nhập mật khẩu", type="password")
+
+    if pwd == st.secrets["auth"]["password"]:
+
+        event = st.selectbox("Chọn sự kiện", df["event"])
         status = st.selectbox("Trạng thái",
             ["Thống nhất", "Chưa thống nhất", "Cần liên hệ"]
         )
 
         if st.button("Cập nhật"):
-            if update_status(event, status):
-                st.success("Đã lưu")
-            else:
-                st.error("Không tìm thấy")
+            st.success(f"{event} → {status}")
+
+            # gửi email nếu cần
+            if status == "Cần liên hệ":
+                msg = MIMEText(f"Sự kiện cần hỗ trợ: {event}")
+                msg["Subject"] = "Cảnh báo sự kiện"
+                msg["From"] = st.secrets["email"]["from"]
+                msg["To"] = st.secrets["email"]["to"]
+
+                with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                    server.starttls()
+                    server.login(
+                        st.secrets["email"]["from"],
+                        st.secrets["email"]["password"]
+                    )
+                    server.send_message(msg)
+
+                st.success("✅ Đã gửi email")
 
     else:
         st.warning("Nhập mật khẩu")
 
-# ================= CONTACT =================
-elif menu=="Liên hệ":
+# ================= LIÊN HỆ =================
+elif menu == "Liên hệ":
+
     st.markdown("""
-**Phòng Hành chính Tổng hợp**
+### 📞 Phòng Hành chính Tổng hợp
 
 217 Hồng Bàng, TP.HCM  
+
+(+84-28) 3855 8411  
+(+84-28) 3853 7949  
+(+84-28) 3855 5780  
+
 Email: hanhchinh@ump.edu.vn
 """)
 
 st.markdown("---")
 st.markdown("<center>© TS. Đào Hồng Nam</center>", unsafe_allow_html=True)
+``
