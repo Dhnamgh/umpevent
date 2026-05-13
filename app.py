@@ -13,23 +13,8 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 html, body {font-family: Arial, sans-serif; font-size:16px; color:#111827;}
-section[data-testid="stSidebar"] {width:255px !important;}
+section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
 .block-container {padding-top: 1rem;}
-
-section[data-testid="stSidebar"] .stRadio label,
-section[data-testid="stSidebar"] .stMultiSelect label,
-section[data-testid="stSidebar"] p {
-    font-size: 15px !important;
-}
-
-section[data-testid="stSidebar"] div[data-baseweb="select"] {
-    font-size: 14px !important;
-}
-
-section[data-testid="stSidebar"] {
-    min-width: 255px !important;
-    max-width: 255px !important;
-}
 
 .table-title {
     font-size: 22px;
@@ -283,101 +268,39 @@ def collapse_repeated_support_rows(dataframe):
     return df_out
 
 
-def build_approval_table(df_input):
-    """
-    Tạo bảng Phê duyệt từ dữ liệu gốc Google Sheet.
-
-    Chỉ lấy các sự kiện chưa có nội dung trong cột:
-    "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)".
-    """
-    approval_columns = [
-        "Sự kiện",
-        "Đơn vị",
-        "Ngày giờ",
-        "Địa điểm",
-        "Nội dung hỗ trợ",
-        "Số lượng"
-    ]
+def build_approval_summary_table(df_input):
+    """Tạo bảng Phê duyệt gọn từ dữ liệu gốc giống bản v6, chỉ giữ các cột quan trọng."""
+    columns = ["Sự kiện", "Đơn vị", "Ngày giờ", "Địa điểm", "Hỗ trợ"]
 
     if df_input is None or len(df_input) == 0:
-        return pd.DataFrame(columns=approval_columns)
+        return pd.DataFrame(columns=columns)
 
-    df_pending = df_input.copy()
+    rows = []
+    df_out = df_input.copy().sort_values("start", ascending=True).reset_index(drop=True)
 
-    if "y_kien_hcth" not in df_pending.columns:
-        df_pending["y_kien_hcth"] = ""
+    for _, r in df_out.iterrows():
+        s = r.get("start")
+        if pd.notna(s):
+            if s.hour == 0 and s.minute == 0:
+                ngay_gio = s.strftime("%d/%m/%Y")
+            else:
+                ngay_gio = s.strftime("%d/%m/%Y %H:%M")
+        else:
+            ngay_gio = ""
 
-    # Chỉ lấy dòng chưa có ý kiến phê duyệt.
-    df_pending["y_kien_hcth"] = df_pending["y_kien_hcth"].apply(clean_text)
-    df_pending = df_pending[df_pending["y_kien_hcth"] == ""].copy()
+        ho_tro = clean_text(r.get("support", ""))
+        if not ho_tro:
+            ho_tro = "Không"
 
-    if len(df_pending) == 0:
-        return pd.DataFrame(columns=approval_columns)
+        rows.append({
+            "Sự kiện": clean_text(r.get("event", "")),
+            "Đơn vị": clean_text(r.get("donvi", "")),
+            "Ngày giờ": ngay_gio,
+            "Địa điểm": clean_text(r.get("location", "")),
+            "Hỗ trợ": ho_tro
+        })
 
-    approval_table = build_support_table(df_pending)
-
-    # Nếu sự kiện chưa có chi tiết hỗ trợ, vẫn đưa vào danh sách để quản trị viên biết cần vào hệ thống duyệt.
-    if len(approval_table) == 0:
-        rows = []
-        for _, r in df_pending.sort_values("start", ascending=True).iterrows():
-            rows.append({
-                "Sự kiện": r.get("event", ""),
-                "Đơn vị": r.get("donvi", ""),
-                "Ngày giờ": r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else "",
-                "Địa điểm": r.get("location", ""),
-                "Nội dung hỗ trợ": "Cần kiểm tra/phê duyệt",
-                "Số lượng": 1
-            })
-        approval_table = pd.DataFrame(rows, columns=approval_columns)
-
-    # Trường hợp một số sự kiện không có chi tiết hỗ trợ nhưng vẫn chưa được duyệt,
-    # bổ sung thêm để không bị sót khỏi danh sách phê duyệt.
-    if len(approval_table) > 0:
-        existing_keys = set(
-            zip(
-                approval_table["Sự kiện"].astype(str),
-                approval_table["Đơn vị"].astype(str),
-                approval_table["Ngày giờ"].astype(str),
-                approval_table["Địa điểm"].astype(str)
-            )
-        )
-    else:
-        existing_keys = set()
-
-    extra_rows = []
-    for _, r in df_pending.sort_values("start", ascending=True).iterrows():
-        ngay_gio = r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else ""
-        key = (
-            str(r.get("event", "")),
-            str(r.get("donvi", "")),
-            str(ngay_gio),
-            str(r.get("location", ""))
-        )
-        if key not in existing_keys:
-            extra_rows.append({
-                "Sự kiện": r.get("event", ""),
-                "Đơn vị": r.get("donvi", ""),
-                "Ngày giờ": ngay_gio,
-                "Địa điểm": r.get("location", ""),
-                "Nội dung hỗ trợ": "Cần kiểm tra/phê duyệt",
-                "Số lượng": 1
-            })
-
-    if extra_rows:
-        approval_table = pd.concat([approval_table, pd.DataFrame(extra_rows)], ignore_index=True)
-
-    if "Ghi chú/Giá trị gốc" in approval_table.columns:
-        approval_table = approval_table.drop(columns=["Ghi chú/Giá trị gốc"])
-
-    approval_table = approval_table[approval_columns]
-
-    if len(approval_table) > 0:
-        approval_table = approval_table.sort_values(
-            ["Ngày giờ", "Đơn vị", "Sự kiện", "Nội dung hỗ trợ"],
-            ascending=[True, True, True, True]
-        ).reset_index(drop=True)
-
-    return approval_table
+    return pd.DataFrame(rows, columns=columns)
 
 
 # ================= LOAD DATA =================
@@ -413,11 +336,7 @@ def load_data():
         "Số lượng Backdrop cần in và thi công": "support_backdrop",
         "Cần chạy bảng điện tử": "support_bang_dien_tu",
         "Cần gửi thư mời": "support_thu_moi",
-        "Các yêu cầu khác (nếu có)": "support_khac",
-        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)": "y_kien_hcth",
-        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)": "y_kien_hcth",
-        "Ý kiến của Phòng Hành chính Tổng hợp": "y_kien_hcth",
-        "Ý kiến P.HCTH": "y_kien_hcth"
+        "Các yêu cầu khác (nếu có)": "support_khac"
     })
 
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
@@ -435,7 +354,7 @@ def load_data():
         if t2 and pd.notna(df.at[i, "end"]):
             df.at[i, "end"] = df.at[i, "end"].replace(hour=t2[0], minute=t2[1])
 
-    for col in ["event", "donvi", "location", "support", "y_kien_hcth"]:
+    for col in ["event", "donvi", "location", "support"]:
         if col not in df.columns:
             df[col] = ""
         df[col] = df[col].apply(clean_text)
@@ -875,9 +794,9 @@ elif menu == "Trợ giúp":
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
     st.subheader("📋 Sự kiện cần phê duyệt")
-    st.info("Chỉ hiển thị các sự kiện chưa có ý kiến trong cột Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp) trên Google Sheet.")
+    st.info("Bảng rút gọn từ dữ liệu gốc để quản trị viên biết sự kiện cần vào hệ thống đăng ký phê duyệt.")
 
-    approval_table = build_approval_table(df_month)
+    approval_table = build_approval_summary_table(df_month)
 
     show_table_with_download(
         "Bảng sự kiện cần phê duyệt",
