@@ -751,4 +751,4 @@ elif menu == "Liên hệ":
 """)
 
 st.markdown("---")
-st.markdown("© TS. Đào Hồng Nam")
+st.markdown("Copyright © 2026 Bản quyền thuộc về Phòng Hành chính Tổng hợp - Đại học Y Dược Thành phố Hồ Chí Minh")
