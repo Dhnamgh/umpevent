@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_calendar import calendar
 import plotly.express as px
+import re
 
 st.set_page_config(layout="wide")
 
@@ -20,13 +21,27 @@ section[data-testid="stSidebar"] {
 </style>
 """, unsafe_allow_html=True)
 
-# ================= TITLE =================
-st.title("📊 Quản lý sự kiện UMP")
+# ================= PARSE TIME UMP =================
+def parse_time(text):
+    if pd.isna(text):
+        return None
+    text = str(text).lower()
+
+    m = re.search(r"(\d{1,2})\s*[gh:]\s*(\d{0,2})", text)
+
+    if m:
+        hour = int(m.group(1))
+        minute = m.group(2)
+        minute = int(minute) if minute != "" else 0
+        return hour, minute
+    return None
 
 # ================= LOAD =================
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(st.secrets["data"]["csv_url"])
+
+    df.columns = df.columns.str.strip()
 
     df = df.rename(columns={
         "Tên sự kiện": "event",
@@ -35,23 +50,35 @@ def load_data():
         "Ngày kết thúc": "end",
         "Địa điểm tổ chức": "location",
         "Số lượng": "people",
-        "Hỗ trợ": "support"
+        "Hỗ trợ": "support",
+        "Giờ bắt đầu": "start_time",
+        "Giờ kết thúc": "end_time"
     })
 
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
     df["end"] = df["end"].fillna(df["start"])
 
+    # ✅ GHÉP GIỜ
+    if "start_time" in df.columns:
+        for i in range(len(df)):
+            t = parse_time(df.loc[i, "start_time"])
+            if t:
+                df.loc[i, "start"] = df.loc[i, "start"].replace(hour=t[0], minute=t[1])
+
+    if "end_time" in df.columns:
+        for i in range(len(df)):
+            t = parse_time(df.loc[i, "end_time"])
+            if t:
+                df.loc[i, "end"] = df.loc[i, "end"].replace(hour=t[0], minute=t[1])
+
     return df
 
 df = load_data()
 today = datetime.today()
 
-# ================= MENU =================
-menu = st.sidebar.radio(
-    "MENU",
-    ["Dashboard", "Báo cáo", "Cảnh báo", "Trợ giúp", "Phê duyệt", "Liên hệ"]
-)
+# ================= TITLE =================
+st.title("📊 Quản lý sự kiện UMP")
 
 # ================= FILTER =================
 donvi_list = sorted(df["donvi"].dropna().unique())
@@ -64,186 +91,122 @@ selected = st.sidebar.multiselect(
 
 st.sidebar.write("✅ Đang chọn:", ", ".join(selected))
 
-if "Toàn trường" in selected:
-    df_f = df
-else:
-    df_f = df[df["donvi"].isin(selected)]
+df_f = df if "Toàn trường" in selected else df[df["donvi"].isin(selected)]
 
-# ================= COLOR MAP =================
+# ================= COLOR =================
 color_map = {
     dv: px.colors.qualitative.Plotly[i % 10]
     for i, dv in enumerate(df["donvi"].dropna().unique())
 }
 
-# ================= DASHBOARD CALENDAR =================
-if menu == "Dashboard":
+# ================= DASHBOARD =================
+st.subheader(f"📅 Lịch sự kiện - Tháng {today.month}/{today.year}")
 
-    st.subheader(f"📅 Lịch sự kiện - Tháng {today.month}/{today.year}")
+col1, col2, col3 = st.columns(3)
 
-    col1, col2, col3 = st.columns(3)
+if "view" not in st.session_state:
+    st.session_state["view"] = "dayGridMonth"
 
-    if "view" not in st.session_state:
-        st.session_state["view"] = "dayGridMonth"
+if col1.button("📅 Tháng"):
+    st.session_state["view"] = "dayGridMonth"
+if col2.button("📆 Tuần"):
+    st.session_state["view"] = "timeGridWeek"
+if col3.button("📊 Ngày"):
+    st.session_state["view"] = "timeGridDay"
 
-    if col1.button("📅 Tháng"):
-        st.session_state["view"] = "dayGridMonth"
-    if col2.button("📆 Tuần"):
-        st.session_state["view"] = "timeGridWeek"
-    if col3.button("📊 Ngày"):
-        st.session_state["view"] = "timeGridDay"
+view = st.session_state["view"]
 
-    view = st.session_state["view"]
+df_year = df_f[df_f["start"].dt.year == today.year]
 
-    df_year = df_f[df_f["start"].dt.year == today.year]
+# ================= CALENDAR =================
+events = []
 
-    # ===== CALENDAR EVENT =====
-    events = []
+for _, row in df_year.iterrows():
 
-    for _, row in df_year.iterrows():
-        events.append({
-            "title": f"{row['event']} ({row['location']})",
-            "start": row["start"].strftime("%Y-%m-%d %H:%M"),
-            "end": row["end"].strftime("%Y-%m-%d %H:%M"),
-            "color": color_map.get(row["donvi"], "#1976d2"),
-        })
+    start = row["start"]
+    end = row["end"]
 
-    calendar_options = {
-        "initialView": view,
-        "locale": "vi",
-        "height": 650,
-        "eventClick": "function(info) {alert(info.event.title);}",
-        "headerToolbar": {
-            "left": "prev,next today",
-            "center": "title",
-            "right": "dayGridMonth,timeGridWeek,timeGridDay"
-        }
+    has_time = not (start.hour == 0 and start.minute == 0)
+
+    start_str = start.strftime("%Y-%m-%d %H:%M") if has_time else start.strftime("%Y-%m-%d")
+    end_str = end.strftime("%Y-%m-%d %H:%M") if has_time else end.strftime("%Y-%m-%d")
+
+    events.append({
+        "title": f"{row['event']} ({row['location']})",
+        "start": start_str,
+        "end": end_str,
+        "color": color_map.get(row["donvi"], "#1976d2")
+    })
+
+calendar(events=events, options={
+    "initialView": view,
+    "locale": "vi",
+    "height": 650,
+    "headerToolbar": {
+        "left": "prev,next today",
+        "center": "title",
+        "right": "dayGridMonth,timeGridWeek,timeGridDay"
     }
+})
 
-    st.subheader("📆 Lịch trực quan")
+# ================= KPI =================
+week_start = today - timedelta(days=today.weekday())
+week_end = week_start + timedelta(days=6)
 
-    calendar(events=events, options=calendar_options)
+df_week = df_year[(df_year["start"] >= week_start) & (df_year["start"] <= week_end)]
+df_month = df_year[df_year["start"].dt.month == today.month]
 
-    # ===== KPI =====
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
+c1, c2, c3 = st.columns(3)
+c1.metric("Tuần", len(df_week))
+c2.metric("Tháng", len(df_month))
+c3.metric("Năm", len(df_year))
 
-    df_week = df_year[
-        (df_year["start"] >= week_start) &
-        (df_year["start"] <= week_end)
-    ]
+# ================= SUPPORT =================
+st.subheader("🛠️ Cần hỗ trợ (tháng hiện hành)")
 
-    df_month = df_year[df_year["start"].dt.month == today.month]
+support_df = df_month[df_month["donvi"] == "Phòng Hành chính Tổng hợp"]
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Tuần", len(df_week))
-    c2.metric("Tháng", len(df_month))
-    c3.metric("Năm", len(df_year))
+if len(support_df) > 0 and "support" in support_df.columns:
 
-    # ===== SUPPORT =====
-    st.subheader("🛠️ Cần hỗ trợ (tháng hiện hành)")
+    valid = support_df["support"].dropna()
 
-    support_df = df_month[df_month["donvi"] == "Phòng Hành chính Tổng hợp"]
-
-    if len(support_df) > 0:
-        summary = support_df["support"].value_counts().reset_index()
+    if len(valid) > 0:
+        summary = valid.astype(str).value_counts().reset_index()
         summary.columns = ["Loại hỗ trợ", "Số lượng"]
-
         st.table(summary)
     else:
-        st.info("Không có yêu cầu hỗ trợ")
+        st.info("Không có dữ liệu hỗ trợ")
+else:
+    st.info("Không có dữ liệu hỗ trợ")
 
-# ================= BÁO CÁO =================
-elif menu == "Báo cáo":
+# ================= WARNING =================
+st.subheader("⚠️ Trùng lịch (30 ngày tới)")
 
-    mode = st.radio("Chế độ", ["Tuần", "Tháng", "Năm"], horizontal=True)
+df_check = df[(df["start"] >= today) & (df["start"] <= today + timedelta(days=30))]
 
-    df_year = df_f[df_f["start"].dt.year == today.year]
+for i in range(len(df_check)):
+    for j in range(i+1, len(df_check)):
+        if df_check.iloc[i]["start"] == df_check.iloc[j]["start"]:
 
-    df_week = df_year[
-        (df_year["start"] >= today - timedelta(days=7)) &
-        (df_year["start"] <= today)
-    ]
+            t = df_check.iloc[i]["start"]
 
-    df_month = df_year[df_year["start"].dt.month == today.month]
+            time_str = (
+                t.strftime("%H:%M %d/%m/%Y")
+                if not (t.hour == 0 and t.minute == 0)
+                else t.strftime("%d/%m/%Y")
+            )
 
-    if mode == "Tuần":
-        data = df_week
-    elif mode == "Tháng":
-        data = df_month
-    else:
-        data = df_year
-
-    summary = data.groupby("donvi").size().reset_index(name="count")
-
-    fig = px.bar(summary, x="donvi", y="count", text="count")
-    fig.update_traces(textposition='outside')
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# ================= CẢNH BÁO =================
-elif menu == "Cảnh báo":
-
-    st.subheader("⚠️ Trùng lịch (tháng + tháng kế)")
-
-    df_check = df[
-        (df["start"] >= today) &
-        (df["start"] <= today + timedelta(days=30))
-    ]
-
-    for i in range(len(df_check)):
-        for j in range(i+1, len(df_check)):
-            if df_check.iloc[i]["start"] == df_check.iloc[j]["start"]:
-
-                t = df_check.iloc[i]["start"].strftime("%H:%M %d/%m/%Y")
-
-                st.warning(f"""
-Trùng lịch: {t}
+            st.warning(f"""
+Trùng lịch: {time_str}
 • {df_check.iloc[i]['event']} - {df_check.iloc[i]['location']}
 • {df_check.iloc[j]['event']} - {df_check.iloc[j]['location']}
 """)
 
-# ================= TRỢ GIÚP =================
-elif menu == "Trợ giúp":
+# ================= CONTACT =================
+st.subheader("📞 Liên hệ")
 
-    st.subheader("🤖 Trợ giúp")
-    q = st.text_input("Nhập câu hỏi:")
-
-    if q:
-        q = q.lower()
-
-        if "tuần" in q:
-            res = df[(df["start"] >= today - timedelta(days=7))]
-            st.dataframe(res)
-
-        elif "tháng" in q:
-            res = df[df["start"].dt.month == today.month]
-            st.dataframe(res)
-
-        elif "năm" in q:
-            st.dataframe(df[df["start"].dt.year == today.year])
-
-        elif "hỗ trợ" in q:
-            res = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
-            st.dataframe(res)
-
-        else:
-            st.info("Chưa hiểu câu hỏi")
-
-# ================= PHÊ DUYỆT =================
-elif menu == "Phê duyệt":
-
-    st.subheader("📋 Sự kiện cần DUYỆT")
-
-    df_month = df[df["start"].dt.month == today.month]
-
-    st.dataframe(df_month.sort_values("start"))
-
-# ================= LIÊN HỆ =================
-elif menu == "Liên hệ":
-
-    st.markdown("""
-### 📞 Phòng Hành chính Tổng hợp
-
+st.markdown("""
+Phòng Hành chính Tổng hợp  
 217 Hồng Bàng, Phường Chợ Lớn, Thành phố Hồ Chí Minh  
 
 (+84-28) 3855 8411  
@@ -253,6 +216,5 @@ elif menu == "Liên hệ":
 Email: hanhchinh@ump.edu.vn
 """)
 
-# ================= FOOTER =================
 st.markdown("---")
 st.markdown("<center>© TS. Đào Hồng Nam</center>", unsafe_allow_html=True)
