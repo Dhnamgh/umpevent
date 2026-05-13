@@ -17,7 +17,6 @@ def load_data():
 
     df = pd.read_csv(url)
 
-    # đổi tên cột
     df = df.rename(columns={
         "Tên sự kiện": "event",
         "Đơn vị phụ trách/ tổ chức": "donvi",
@@ -26,13 +25,11 @@ def load_data():
         "Địa điểm tổ chức": "location"
     })
 
-    # convert date
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
 
     df["end"] = df["end"].fillna(df["start"])
 
-    # thêm thời gian
     df["month"] = df["start"].dt.month
     df["year"] = df["start"].dt.year
 
@@ -41,28 +38,35 @@ def load_data():
 df = load_data()
 
 # =========================
-# MENU
+# CHỌN ĐƠN VỊ
 # =========================
-menu = st.sidebar.selectbox(
-    "Chọn chức năng",
-    ["Dashboard", "Tổng hợp"]
+donvi_list = sorted(df["donvi"].dropna().unique())
+
+# thêm option toàn trường
+options = ["Toàn trường"] + list(donvi_list)
+
+selected = st.sidebar.multiselect(
+    "Chọn đơn vị",
+    options,
+    default=["Phòng Hành chính Tổng hợp"]
 )
 
+# xử lý logic
+if "Toàn trường" in selected or len(selected) == 0:
+    df_f = df.copy()
+else:
+    df_f = df[df["donvi"].isin(selected)]
+
 # =========================
-# DASHBOARD
+# TAB
 # =========================
-if menu == "Dashboard":
+tab1, tab2 = st.tabs(["📊 Dashboard", "📈 Tổng hợp"])
+
+# =========================
+# TAB 1 - DASHBOARD
+# =========================
+with tab1:
     st.title("📊 Dashboard Quản lý sự kiện UMP")
-
-    # filter đơn vị
-    donvi_list = df["donvi"].dropna().unique()
-    chon_donvi = st.sidebar.multiselect(
-        "Chọn đơn vị",
-        donvi_list,
-        default=donvi_list
-    )
-
-    df_f = df[df["donvi"].isin(chon_donvi)]
 
     # KPI
     c1, c2, c3 = st.columns(3)
@@ -72,11 +76,11 @@ if menu == "Dashboard":
 
     st.divider()
 
-    # table
+    # Table
     st.subheader("📋 Dữ liệu chi tiết")
     st.dataframe(df_f, use_container_width=True)
 
-    # gantt
+    # Gantt
     st.subheader("📅 Biểu đồ Gantt")
 
     df_g = df_f.dropna(subset=["start"])
@@ -94,33 +98,34 @@ if menu == "Dashboard":
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # summary
+    # Summary
     st.subheader("📊 Số sự kiện theo đơn vị")
-    summary = df_f.groupby("donvi").size().reset_index(name="count")
 
+    summary = df_f.groupby("donvi").size().reset_index(name="count")
     fig2 = px.bar(summary, x="donvi", y="count")
     st.plotly_chart(fig2, use_container_width=True)
 
 # =========================
-# TỔNG HỢP
+# TAB 2 - TỔNG HỢP
 # =========================
-elif menu == "Tổng hợp":
+with tab2:
     st.title("📊 Báo cáo tổng hợp")
 
     today = datetime.today()
     current_month = today.month
     current_year = today.year
 
-    # dữ liệu tháng
+    # tháng hiện tại (tính đến hôm nay)
     df_month = df[
-        (df["month"] == current_month) &
-        (df["year"] == current_year)
+        (df["start"].dt.year == current_year) &
+        (df["start"].dt.month == current_month) &
+        (df["start"] <= today)
     ]
 
-    # dữ liệu YTD
+    # YTD (đến hôm nay)
     df_ytd = df[
-        (df["year"] == current_year) &
-        (df["month"] <= current_month)
+        (df["start"].dt.year == current_year) &
+        (df["start"] <= today)
     ]
 
     # ----- THÁNG -----
@@ -136,7 +141,7 @@ elif menu == "Tổng hợp":
     st.divider()
 
     # ----- YTD -----
-    st.subheader(f"📅 Từ đầu năm đến tháng {current_month}")
+    st.subheader(f"📅 Từ đầu năm đến hiện tại")
 
     c1, c2 = st.columns(2)
     c1.metric("Số sự kiện", len(df_ytd))
@@ -146,12 +151,10 @@ elif menu == "Tổng hợp":
     st.bar_chart(summary_ytd.set_index("donvi"))
 
 # =========================
-# FOOTER (BẢN QUYỀN)
+# FOOTER
 # =========================
 st.markdown("---")
 st.markdown(
-    "<div style='text-align: center; color: gray;'>"
-    "© Bản quyền thuộc về TS. Đào Hồng Nam"
-    "</div>",
+    "<div style='text-align:center; color:gray;'>© Bản quyền thuộc về TS. Đào Hồng Nam</div>",
     unsafe_allow_html=True
 )
