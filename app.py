@@ -472,7 +472,10 @@ if menu == "Dashboard":
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="calendar-mobile-scroll"><div class="calendar-mobile-inner">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="calendar-mobile-scroll"><div class="calendar-mobile-inner">',
+        unsafe_allow_html=True
+    )
 
     selected_event = calendar(
         events=events,
@@ -512,7 +515,7 @@ if menu == "Dashboard":
         """
     )
 
-    st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
     if selected_event and "event" in selected_event:
         e = selected_event["event"]["extendedProps"]
@@ -666,12 +669,26 @@ elif menu == "Hỗ trợ":
     df_support_period, support_label, _, _ = get_period_df(df_f, support_period)
     support_table = build_support_table(df_support_period)
 
-    st.markdown(f'<div class="table-title">Hoạt động cần hỗ trợ - {support_label}</div>', unsafe_allow_html=True)
-
     if len(support_table) == 0:
         st.info("Không có thông tin cần hỗ trợ")
     else:
-        support_table = support_table.sort_values(["Ngày giờ", "Đơn vị", "Sự kiện", "Nội dung hỗ trợ"]).reset_index(drop=True)
+        # Sắp xếp theo thời gian giảm dần: sự kiện gần nhất/mới nhất ở trên cùng.
+        support_table["_sort_time"] = pd.to_datetime(
+            support_table["Ngày giờ"],
+            format="%d/%m/%Y %H:%M",
+            errors="coerce"
+        )
+
+        support_table = (
+            support_table
+            .sort_values(
+                ["_sort_time", "Đơn vị", "Sự kiện", "Nội dung hỗ trợ"],
+                ascending=[False, True, True, True]
+            )
+            .drop(columns=["_sort_time"])
+            .reset_index(drop=True)
+        )
+
         display_support_table = collapse_repeated_support_rows(support_table)
         show_table_with_download(
             f"Bảng sự kiện cần hỗ trợ - {support_label}",
