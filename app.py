@@ -118,6 +118,7 @@ view = st.session_state["view"]
 
 df_year = df_f[df_f["start"].dt.year == today.year]
 
+
 # ================= CALENDAR =================
 events = []
 
@@ -132,34 +133,56 @@ for _, row in df_year.iterrows():
     end_str = end.strftime("%Y-%m-%d %H:%M") if has_time else end.strftime("%Y-%m-%d")
 
     events.append({
-        "title": f"{row['event']} ({row['location']})",
+        "title": row["event"],
         "start": start_str,
         "end": end_str,
-        "color": color_map.get(row["donvi"], "#1976d2")
+        "color": color_map.get(row["donvi"], "#1976d2"),
+
+        # ✅ dữ liệu chi tiết
+        "extendedProps": {
+            "event": row["event"],
+            "donvi": row["donvi"],
+            "location": row["location"],
+            "time": start_str,
+            "support": str(row.get("support", ""))
+        }
     })
 
-calendar(events=events, options={
+
+# ✅ POPUP JS KHI CLICK
+calendar_options = {
     "initialView": view,
     "locale": "vi",
     "height": 650,
+    "eventClick": """
+function(info) {
+
+    let e = info.event.extendedProps;
+
+    let content = `
+📌 <b>Sự kiện:</b> ${e.event}<br>
+🏢 <b>Đơn vị:</b> ${e.donvi}<br>
+📍 <b>Địa điểm:</b> ${e.location}<br>
+🕒 <b>Thời gian:</b> ${info.event.start.toLocaleString()}<br>
+🛠 <b>Hỗ trợ:</b> ${e.support}
+    `;
+
+    alert(content);
+}
+""",
+    "eventDidMount": """
+function(info) {
+    info.el.title = info.event.title;
+}
+""",
     "headerToolbar": {
         "left": "prev,next today",
         "center": "title",
         "right": "dayGridMonth,timeGridWeek,timeGridDay"
     }
-})
+}
 
-# ================= KPI =================
-week_start = today - timedelta(days=today.weekday())
-week_end = week_start + timedelta(days=6)
-
-df_week = df_year[(df_year["start"] >= week_start) & (df_year["start"] <= week_end)]
-df_month = df_year[df_year["start"].dt.month == today.month]
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Tuần", len(df_week))
-c2.metric("Tháng", len(df_month))
-c3.metric("Năm", len(df_year))
+calendar(events=events, options=calendar_options)
 
 # ================= SUPPORT =================
 st.subheader("🛠️ Cần hỗ trợ (tháng hiện hành)")
