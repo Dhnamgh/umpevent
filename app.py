@@ -3,9 +3,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from streamlit_calendar import calendar
 import plotly.express as px
-import plotly.graph_objects as go
 import re
 import hashlib
+from io import BytesIO
 
 st.set_page_config(layout="wide")
 
@@ -15,6 +15,19 @@ st.markdown("""
 html, body {font-family: Arial, sans-serif; font-size:16px; color:#111827;}
 section[data-testid="stSidebar"] {width:340px !important;}
 .block-container {padding-top: 1rem;}
+
+.table-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: #111827;
+    margin-top: 18px;
+    margin-bottom: 8px;
+}
+
+.small-note {
+    color:#374151;
+    font-weight:600;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -24,6 +37,7 @@ st.title("📊 Quản lý sự kiện UMP")
 def parse_time(text):
     if pd.isna(text):
         return None
+
     text = str(text).strip().lower()
     if not text or text in ["nan", "none"]:
         return None
@@ -62,8 +76,9 @@ def count_value(value):
     txt = clean_text(value)
     if not txt:
         return 0
+
     up = txt.upper()
-    if up in ["KHÔNG", "KHONG", "NO", "N", "FALSE"]:
+    if up in ["KHÔNG", "KHONG", "NO", "N", "FALSE", "0"]:
         return 0
 
     m = re.search(r"\d+", txt.replace(",", "."))
@@ -80,7 +95,7 @@ def count_value(value):
 
 
 def event_color(index, key):
-    """Create stable, highly varied colors by event, not by unit."""
+    """Create stable colors by event, reducing repeated adjacent colors."""
     palette = [
         "#00695C", "#C62828", "#1565C0", "#EF6C00", "#6A1B9A",
         "#2E7D32", "#AD1457", "#283593", "#00838F", "#5D4037",
@@ -91,7 +106,7 @@ def event_color(index, key):
     return palette[(digest + index) % len(palette)]
 
 
-def wrap_label(text, width=24):
+def wrap_label(text, width=28):
     words = str(text).split()
     lines = []
     line = ""
@@ -109,11 +124,13 @@ def wrap_label(text, width=24):
 
 def get_period_df(df_input, period):
     now = datetime.today()
+
     if period == "Tuần":
         start = now - timedelta(days=now.weekday())
         start = start.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + timedelta(days=7)
         label = f"Tuần {start.strftime('%d/%m/%Y')} - {(end - timedelta(days=1)).strftime('%d/%m/%Y')}"
+
     elif period == "Tháng":
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if start.month == 12:
@@ -121,13 +138,39 @@ def get_period_df(df_input, period):
         else:
             end = start.replace(month=start.month + 1)
         label = f"Tháng {now.month}/{now.year}"
+
     else:
         start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         end = start.replace(year=start.year + 1)
         label = f"Năm {now.year}"
 
-    out = df_input[(df_input["start"] >= start) & (df_input["start"] < end)]
+    out = df_input[(df_input["start"] >= start) & (df_input["start"] < end)].copy()
     return out, label, start, end
+
+
+def dataframe_to_excel_bytes(dataframe):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        dataframe.to_excel(writer, index=False, sheet_name="Data")
+    return output.getvalue()
+
+
+def show_table_with_download(title, dataframe, file_name):
+    st.markdown(f'<div class="table-title">{title}</div>', unsafe_allow_html=True)
+
+    if dataframe is None or len(dataframe) == 0:
+        st.info("Không có dữ liệu")
+        return
+
+    st.dataframe(dataframe, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        label="⬇️ Tải về Excel",
+        data=dataframe_to_excel_bytes(dataframe),
+        file_name=file_name,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=False
+    )
 
 
 # ================= LOAD DATA =================
@@ -212,32 +255,38 @@ def build_support_table(df_input):
     }
 
     rows = []
+
     for _, r in df_input.iterrows():
         has_support_flag = is_yes(r.get("support", ""))
+        has_detail = False
+
         for col, label in support_cols.items():
             if col not in df_input.columns:
                 continue
+
             raw = r.get(col, "")
             qty = count_value(raw)
+
             if qty > 0:
+                has_detail = True
                 rows.append({
                     "Sự kiện": r.get("event", ""),
-                    "Ngày": r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else "",
                     "Đơn vị": r.get("donvi", ""),
+                    "Ngày giờ": r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else "",
                     "Địa điểm": r.get("location", ""),
-                    "Hỗ trợ": label,
+                    "Nội dung hỗ trợ": label,
                     "Số lượng": qty,
                     "Ghi chú/Giá trị gốc": clean_text(raw)
                 })
 
-        # Nếu đánh dấu CÓ nhưng không nhập chi tiết số lượng
-        if has_support_flag and not any(count_value(r.get(c, "")) > 0 for c in support_cols):
+        # Nếu có đánh dấu hỗ trợ nhưng không có cột chi tiết số lượng
+        if has_support_flag and not has_detail:
             rows.append({
                 "Sự kiện": r.get("event", ""),
-                "Ngày": r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else "",
                 "Đơn vị": r.get("donvi", ""),
+                "Ngày giờ": r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else "",
                 "Địa điểm": r.get("location", ""),
-                "Hỗ trợ": "Có yêu cầu hỗ trợ",
+                "Nội dung hỗ trợ": "Có yêu cầu hỗ trợ",
                 "Số lượng": 1,
                 "Ghi chú/Giá trị gốc": clean_text(r.get("support", ""))
             })
@@ -245,13 +294,14 @@ def build_support_table(df_input):
     return pd.DataFrame(rows)
 
 
+# ================= DATA =================
 df = load_data()
 today = datetime.today()
 
 # ================= MENU =================
 menu = st.sidebar.radio(
     "MENU",
-    ["Dashboard", "Báo cáo", "Cảnh báo", "Trợ giúp", "Phê duyệt", "Liên hệ"]
+    ["Dashboard", "Báo cáo", "Cảnh báo", "Hỗ trợ", "Trợ giúp", "Phê duyệt", "Liên hệ"]
 )
 
 # ================= FILTER =================
@@ -272,7 +322,8 @@ if menu == "Dashboard":
     st.subheader(f"📅 Lịch toàn trường - Tháng {today.month}/{today.year}")
 
     events = []
-    for idx, (_, r) in enumerate(df_year.iterrows()):
+
+    for idx, (_, r) in enumerate(df_year.sort_values("start").iterrows()):
         s = r["start"]
         e = r["end"]
         has_time = not (s.hour == 0 and s.minute == 0)
@@ -282,6 +333,7 @@ if menu == "Dashboard":
 
         time_label = s.strftime("%H:%M") if has_time else "Cả ngày"
         location = clean_text(r.get("location", ""))
+
         title = f"{time_label} - {r['event']}"
         if location:
             title += f"\n📍 {location}"
@@ -309,6 +361,7 @@ if menu == "Dashboard":
         options={
             "initialView": "dayGridMonth",
             "locale": "vi",
+            "firstDay": 1,
             "height": "auto",
             "contentHeight": "auto",
             "expandRows": False,
@@ -322,14 +375,21 @@ if menu == "Dashboard":
         custom_css="""
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
         .fc-toolbar-title { font-size: 28px !important; font-weight: 800 !important; color:#111827 !important; }
-        .fc-col-header-cell-cushion, .fc-daygrid-day-number { color:#111827 !important; font-weight:700 !important; }
-        .fc-daygrid-day-frame { min-height: 170px !important; height: auto !important; padding: 2px !important; }
+        .fc-col-header-cell-cushion, .fc-daygrid-day-number { color:#111827 !important; font-weight:800 !important; }
+
+        /* Hàng không có sự kiện co thấp lại. Hàng có sự kiện vẫn đủ cao để đọc nội dung. */
+        .fc-daygrid-day-frame { min-height: 58px !important; height: auto !important; padding: 2px !important; }
+        .fc-daygrid-week:has(.fc-daygrid-event) .fc-daygrid-day-frame,
+        .fc-scrollgrid-sync-table tr:has(.fc-daygrid-event) .fc-daygrid-day-frame {
+            min-height: 165px !important;
+        }
+
         .fc-daygrid-day-events { min-height: 1px !important; margin-bottom: 4px !important; }
         .fc-daygrid-event-harness { position: relative !important; margin-top: 4px !important; }
-        .fc-daygrid-event { white-space: normal !important; overflow: visible !important; padding: 4px 5px !important; border-radius: 6px !important; }
+        .fc-daygrid-event { white-space: normal !important; overflow: visible !important; padding: 5px 6px !important; border-radius: 6px !important; }
         .fc-event-main { white-space: normal !important; overflow: visible !important; }
         .fc-event-title-container { white-space: normal !important; overflow: visible !important; }
-        .fc-event-title { white-space: pre-line !important; overflow: visible !important; text-overflow: unset !important; line-height: 1.35 !important; font-size: 12.5px !important; font-weight: 700 !important; }
+        .fc-event-title { white-space: pre-line !important; overflow: visible !important; text-overflow: unset !important; line-height: 1.35 !important; font-size: 12.5px !important; font-weight: 800 !important; }
         .fc-daygrid-block-event .fc-event-title { white-space: pre-line !important; }
         """
     )
@@ -354,27 +414,18 @@ if menu == "Dashboard":
     c2.metric("Tháng", len(df_month))
     c3.metric("Năm", len(df_year))
 
-    st.subheader("🛠️ Cần hỗ trợ")
-    support_table = build_support_table(df_month)
-    if len(support_table) == 0:
-        st.info("Không có thông tin cần hỗ trợ")
-    else:
-        support_sum = support_table.groupby("Hỗ trợ", as_index=False)["Số lượng"].sum().sort_values("Số lượng", ascending=False)
-        st.dataframe(support_sum, use_container_width=True)
-
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
     st.subheader("📊 Báo cáo sự kiện theo đơn vị")
 
-    report_period = st.radio(
+    report_period = st.selectbox(
         "Chọn kỳ báo cáo",
         ["Tuần", "Tháng", "Năm"],
-        horizontal=True,
         index=1
     )
 
     df_report, report_label, _, _ = get_period_df(df_f, report_period)
-    st.markdown(f"### Báo cáo: {report_label}")
+    st.markdown(f'<div class="table-title">Báo cáo: {report_label}</div>', unsafe_allow_html=True)
 
     if len(df_report) == 0:
         st.info(f"Không có sự kiện trong {report_label.lower()}")
@@ -394,7 +445,7 @@ elif menu == "Báo cáo":
             text="Số sự kiện",
             color="donvi",
             orientation="h",
-            height=max(520, 48 * len(summary) + 180),
+            height=max(540, 52 * len(summary) + 180),
             hover_data={"donvi": True, "Đơn vị hiển thị": False}
         )
 
@@ -404,17 +455,24 @@ elif menu == "Báo cáo":
         )
 
         fig.update_layout(
-            title=dict(text=f"Số sự kiện theo đơn vị - {report_label}", font=dict(size=22, color="black", family="Arial Black")),
+            title=dict(text=f"Số sự kiện theo đơn vị - {report_label}", font=dict(size=23, color="black", family="Arial Black")),
             showlegend=False,
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(l=40, r=90, t=70, b=40),
-            xaxis=dict(title="Số sự kiện", tickfont=dict(size=15, color="black", family="Arial"), title_font=dict(size=16, color="black", family="Arial Black")),
-            yaxis=dict(title="", tickfont=dict(size=15, color="black", family="Arial Black"), automargin=True)
+            margin=dict(l=30, r=90, t=80, b=40),
+            xaxis=dict(title="Số sự kiện", tickfont=dict(size=16, color="black", family="Arial Black"), title_font=dict(size=17, color="black", family="Arial Black")),
+            yaxis=dict(title="", tickfont=dict(size=16, color="black", family="Arial Black"), automargin=True)
         )
 
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(summary[["donvi", "Số sự kiện"]].sort_values("Số sự kiện", ascending=False), use_container_width=True)
+
+        table_report = summary[["donvi", "Số sự kiện"]].sort_values("Số sự kiện", ascending=False)
+        table_report = table_report.rename(columns={"donvi": "Đơn vị"})
+        show_table_with_download(
+            f"Bảng báo cáo sự kiện theo đơn vị - {report_label}",
+            table_report,
+            f"bao_cao_su_kien_{report_period.lower()}.xlsx"
+        )
 
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
@@ -422,6 +480,7 @@ elif menu == "Cảnh báo":
 
     df_check = df_f[(df_f["start"] >= today) & (df_f["start"] <= today + timedelta(days=30))].copy()
     found = False
+    rows = []
 
     for i in range(len(df_check)):
         for j in range(i + 1, len(df_check)):
@@ -448,8 +507,100 @@ elif menu == "Cảnh báo":
   - Địa điểm: {loc2}
 """)
 
+                rows.append({
+                    "Sự kiện 1": df_check.iloc[i]["event"],
+                    "Thời gian 1": time_str_1,
+                    "Địa điểm 1": loc1,
+                    "Sự kiện 2": df_check.iloc[j]["event"],
+                    "Thời gian 2": time_str_2,
+                    "Địa điểm 2": loc2
+                })
+
     if not found:
         st.success("Không phát hiện lịch bị trùng trong 30 ngày tới")
+    else:
+        show_table_with_download(
+            "Bảng chi tiết lịch trùng/chồng lấn",
+            pd.DataFrame(rows),
+            "canh_bao_trung_lich.xlsx"
+        )
+
+# ================= HỖ TRỢ =================
+elif menu == "Hỗ trợ":
+    st.subheader("🛠️ Thống kê hoạt động cần hỗ trợ")
+
+    support_period = st.selectbox(
+        "Chọn kỳ thống kê hỗ trợ",
+        ["Tuần", "Tháng", "Năm"],
+        index=1
+    )
+
+    df_support_period, support_label, _, _ = get_period_df(df_f, support_period)
+    support_table = build_support_table(df_support_period)
+
+    st.markdown(f'<div class="table-title">Hoạt động cần hỗ trợ - {support_label}</div>', unsafe_allow_html=True)
+
+    if len(support_table) == 0:
+        st.info("Không có thông tin cần hỗ trợ")
+    else:
+        show_table_with_download(
+            f"Bảng sự kiện cần hỗ trợ - {support_label}",
+            support_table,
+            f"su_kien_can_ho_tro_{support_period.lower()}.xlsx"
+        )
+
+        chart_df = (
+            support_table.groupby(["Sự kiện", "Đơn vị", "Ngày giờ", "Nội dung hỗ trợ"], as_index=False)["Số lượng"]
+            .sum()
+            .sort_values("Số lượng", ascending=False)
+        )
+
+        chart_df["Nhãn sự kiện"] = chart_df["Sự kiện"].apply(lambda x: wrap_label(x, 28))
+
+        fig = px.bar(
+            chart_df,
+            x="Nhãn sự kiện",
+            y="Số lượng",
+            color="Nội dung hỗ trợ",
+            text="Số lượng",
+            hover_data={
+                "Sự kiện": True,
+                "Đơn vị": True,
+                "Ngày giờ": True,
+                "Nhãn sự kiện": False
+            },
+            barmode="group",
+            height=max(620, 90 + 58 * chart_df["Sự kiện"].nunique())
+        )
+
+        fig.update_traces(
+            textposition="outside",
+            textfont=dict(size=15, color="black", family="Arial Black")
+        )
+
+        fig.update_layout(
+            title=dict(text=f"Biểu đồ thống kê nội dung cần hỗ trợ - {support_label}", font=dict(size=23, color="black", family="Arial Black")),
+            xaxis=dict(title="Sự kiện", tickangle=-15, tickfont=dict(size=13, color="black", family="Arial Black"), automargin=True),
+            yaxis=dict(title="Số lượng", tickfont=dict(size=15, color="black", family="Arial Black"), title_font=dict(size=16, color="black", family="Arial Black")),
+            legend=dict(title="Nội dung hỗ trợ", font=dict(size=13, color="black")),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+            margin=dict(l=40, r=40, t=80, b=180)
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        summary_support = (
+            support_table.groupby(["Nội dung hỗ trợ"], as_index=False)["Số lượng"]
+            .sum()
+            .sort_values("Số lượng", ascending=False)
+        )
+
+        show_table_with_download(
+            f"Bảng tổng hợp số lượng hỗ trợ - {support_label}",
+            summary_support,
+            f"tong_hop_ho_tro_{support_period.lower()}.xlsx"
+        )
 
 # ================= TRỢ GIÚP =================
 elif menu == "Trợ giúp":
@@ -461,27 +612,15 @@ elif menu == "Trợ giúp":
 
         if "tuần" in q:
             week_df, label, _, _ = get_period_df(df_f, "Tuần")
-            st.write(f"📅 Sự kiện {label}")
-            if len(week_df) > 0:
-                st.dataframe(week_df, use_container_width=True)
-            else:
-                st.info("Không có sự kiện trong tuần này")
+            show_table_with_download(f"Sự kiện {label}", week_df, "su_kien_tuan.xlsx")
 
         elif "tháng" in q:
             month_df, label, _, _ = get_period_df(df_f, "Tháng")
-            st.write(f"📅 Sự kiện {label}")
-            if len(month_df) > 0:
-                st.dataframe(month_df, use_container_width=True)
-            else:
-                st.info("Không có sự kiện trong tháng")
+            show_table_with_download(f"Sự kiện {label}", month_df, "su_kien_thang.xlsx")
 
         elif "năm" in q:
             year_df, label, _, _ = get_period_df(df_f, "Năm")
-            st.write(f"📅 Sự kiện {label}")
-            if len(year_df) > 0:
-                st.dataframe(year_df, use_container_width=True)
-            else:
-                st.info("Không có sự kiện trong năm")
+            show_table_with_download(f"Sự kiện {label}", year_df, "su_kien_nam.xlsx")
 
         elif "hỗ trợ" in q or "ho tro" in q:
             support_df = build_support_table(df_f)
@@ -489,20 +628,20 @@ elif menu == "Trợ giúp":
             if len(support_df) == 0:
                 st.info("Không có thông tin cần hỗ trợ")
             else:
-                st.write("### Danh sách sự kiện cần hỗ trợ")
-                st.dataframe(support_df, use_container_width=True)
+                show_table_with_download("Danh sách sự kiện cần hỗ trợ", support_df, "danh_sach_can_ho_tro.xlsx")
 
                 chart_df = (
-                    support_df.groupby(["Sự kiện", "Hỗ trợ"], as_index=False)["Số lượng"]
+                    support_df.groupby(["Sự kiện", "Nội dung hỗ trợ"], as_index=False)["Số lượng"]
                     .sum()
                     .sort_values("Số lượng", ascending=False)
                 )
+                chart_df["Nhãn sự kiện"] = chart_df["Sự kiện"].apply(lambda x: wrap_label(x, 28))
 
                 fig = px.bar(
                     chart_df,
-                    x="Sự kiện",
+                    x="Nhãn sự kiện",
                     y="Số lượng",
-                    color="Hỗ trợ",
+                    color="Nội dung hỗ trợ",
                     text="Số lượng",
                     barmode="group",
                     height=max(560, 80 + 45 * chart_df["Sự kiện"].nunique())
@@ -511,11 +650,11 @@ elif menu == "Trợ giúp":
                 fig.update_traces(textposition="outside", textfont=dict(size=14, color="black", family="Arial Black"))
                 fig.update_layout(
                     title=dict(text="Thống kê sự kiện cần hỗ trợ", font=dict(size=22, color="black", family="Arial Black")),
-                    xaxis=dict(title="Sự kiện", tickangle=-25, tickfont=dict(size=13, color="black", family="Arial Black"), automargin=True),
+                    xaxis=dict(title="Sự kiện", tickangle=-15, tickfont=dict(size=13, color="black", family="Arial Black"), automargin=True),
                     yaxis=dict(title="Số lượng", tickfont=dict(size=14, color="black")),
                     legend=dict(title="Loại hỗ trợ", font=dict(size=13, color="black")),
                     plot_bgcolor="white",
-                    margin=dict(l=40, r=40, t=70, b=140)
+                    margin=dict(l=40, r=40, t=70, b=150)
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
@@ -525,8 +664,11 @@ elif menu == "Trợ giúp":
 
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
-    st.subheader("📋 Sự kiện cần phê duyệt")
-    st.dataframe(df_month, use_container_width=True)
+    show_table_with_download(
+        "📋 Sự kiện cần phê duyệt",
+        df_month,
+        "su_kien_can_phe_duyet.xlsx"
+    )
 
 # ================= LIÊN HỆ =================
 elif menu == "Liên hệ":
