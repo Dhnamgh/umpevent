@@ -97,10 +97,10 @@ def count_value(value):
 def event_color(index, key):
     """Create stable colors by event, reducing repeated adjacent colors."""
     palette = [
-        "#00695C", "#C62828", "#1565C0", "#EF6C00", "#6A1B9A",
-        "#2E7D32", "#AD1457", "#283593", "#00838F", "#5D4037",
-        "#9E2A2B", "#3F51B5", "#00796B", "#F57C00", "#7B1FA2",
-        "#455A64", "#D84315", "#1B5E20", "#4E342E", "#0277BD"
+        "#DBEAFE", "#DCFCE7", "#FEE2E2", "#FFEDD5", "#F3E8FF",
+        "#CCFBF1", "#FCE7F3", "#E0E7FF", "#CFFAFE", "#FEF3C7",
+        "#E5E7EB", "#D1FAE5", "#FAE8FF", "#EDE9FE", "#FDE68A",
+        "#BFDBFE", "#BBF7D0", "#FECACA", "#FED7AA", "#DDD6FE"
     ]
     digest = int(hashlib.md5(str(key).encode("utf-8")).hexdigest(), 16)
     return palette[(digest + index) % len(palette)]
@@ -149,10 +149,30 @@ def get_period_df(df_input, period):
 
 
 def dataframe_to_excel_bytes(dataframe):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        dataframe.to_excel(writer, index=False, sheet_name="Data")
-    return output.getvalue()
+    """
+    Tạo file Excel dạng .xls bằng HTML để tránh lỗi thiếu module openpyxl/xlsxwriter
+    trên Streamlit Cloud. Excel vẫn mở được bình thường.
+    """
+    html = dataframe.to_html(index=False, escape=False)
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            table {{ border-collapse: collapse; font-family: Arial, sans-serif; }}
+            th {{ background: #e5e7eb; font-weight: bold; }}
+            th, td {{ border: 1px solid #999; padding: 6px; }}
+        </style>
+    </head>
+    <body>{html}</body>
+    </html>
+    """
+    return html.encode("utf-8-sig")
+
+
+def excel_file_name(file_name):
+    base = str(file_name).rsplit(".", 1)[0]
+    return base + ".xls"
 
 
 def show_table_with_download(title, dataframe, file_name):
@@ -167,8 +187,8 @@ def show_table_with_download(title, dataframe, file_name):
     st.download_button(
         label="⬇️ Tải về Excel",
         data=dataframe_to_excel_bytes(dataframe),
-        file_name=file_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        file_name=excel_file_name(file_name),
+        mime="application/vnd.ms-excel",
         use_container_width=False
     )
 
@@ -346,7 +366,7 @@ if menu == "Dashboard":
             "end": end_str,
             "backgroundColor": color,
             "borderColor": color,
-            "textColor": "#FFFFFF",
+            "textColor": "#111827",
             "extendedProps": {
                 "event": r.get("event", ""),
                 "donvi": r.get("donvi", ""),
@@ -386,10 +406,10 @@ if menu == "Dashboard":
 
         .fc-daygrid-day-events { min-height: 1px !important; margin-bottom: 4px !important; }
         .fc-daygrid-event-harness { position: relative !important; margin-top: 4px !important; }
-        .fc-daygrid-event { white-space: normal !important; overflow: visible !important; padding: 5px 6px !important; border-radius: 6px !important; }
+        .fc-daygrid-event { white-space: normal !important; overflow: visible !important; padding: 5px 6px !important; border-radius: 6px !important; border-width: 0 0 0 5px !important; box-shadow: 0 1px 2px rgba(0,0,0,0.08) !important; }
         .fc-event-main { white-space: normal !important; overflow: visible !important; }
         .fc-event-title-container { white-space: normal !important; overflow: visible !important; }
-        .fc-event-title { white-space: pre-line !important; overflow: visible !important; text-overflow: unset !important; line-height: 1.35 !important; font-size: 12.5px !important; font-weight: 800 !important; }
+        .fc-event-title { white-space: pre-line !important; overflow: visible !important; text-overflow: unset !important; line-height: 1.35 !important; font-size: 13px !important; font-weight: 700 !important; color:#111827 !important; font-family: Arial, sans-serif !important; }
         .fc-daygrid-block-event .fc-event-title { white-space: pre-line !important; }
         """
     )
@@ -418,10 +438,13 @@ if menu == "Dashboard":
 elif menu == "Báo cáo":
     st.subheader("📊 Báo cáo sự kiện theo đơn vị")
 
-    report_period = st.selectbox(
+    st.markdown('<div class="table-title">Chọn kỳ báo cáo</div>', unsafe_allow_html=True)
+    report_period = st.radio(
         "Chọn kỳ báo cáo",
         ["Tuần", "Tháng", "Năm"],
-        index=1
+        index=1,
+        horizontal=True,
+        label_visibility="collapsed"
     )
 
     df_report, report_label, _, _ = get_period_df(df_f, report_period)
@@ -529,10 +552,13 @@ elif menu == "Cảnh báo":
 elif menu == "Hỗ trợ":
     st.subheader("🛠️ Thống kê hoạt động cần hỗ trợ")
 
-    support_period = st.selectbox(
+    st.markdown('<div class="table-title">Chọn kỳ thống kê hỗ trợ</div>', unsafe_allow_html=True)
+    support_period = st.radio(
         "Chọn kỳ thống kê hỗ trợ",
         ["Tuần", "Tháng", "Năm"],
-        index=1
+        index=1,
+        horizontal=True,
+        label_visibility="collapsed"
     )
 
     df_support_period, support_label, _, _ = get_period_df(df_f, support_period)
