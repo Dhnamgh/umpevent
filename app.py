@@ -3,9 +3,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 
-# =========================
-# CONFIG
-# =========================
 st.set_page_config(page_title="UMP Dashboard", layout="wide")
 
 # =========================
@@ -14,7 +11,6 @@ st.set_page_config(page_title="UMP Dashboard", layout="wide")
 @st.cache_data(ttl=600)
 def load_data():
     url = st.secrets["data"]["csv_url"]
-
     df = pd.read_csv(url)
 
     df = df.rename(columns={
@@ -22,12 +18,13 @@ def load_data():
         "Đơn vị phụ trách/ tổ chức": "donvi",
         "Ngày tổ chức": "start",
         "Ngày kết thúc": "end",
-        "Địa điểm tổ chức": "location"
+        "Địa điểm tổ chức": "location",
+        "Số lượng": "people",
+        "Hỗ trợ": "support"
     })
 
     df["start"] = pd.to_datetime(df["start"], errors="coerce")
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
-
     df["end"] = df["end"].fillna(df["start"])
 
     df["month"] = df["start"].dt.month
@@ -38,11 +35,17 @@ def load_data():
 df = load_data()
 
 # =========================
-# CHỌN ĐƠN VỊ
+# MENU SIDEBAR
+# =========================
+menu = st.sidebar.radio(
+    "📋 Chức năng",
+    ["Dashboard", "Tổng hợp", "Trợ giúp", "Liên hệ"]
+)
+
+# =========================
+# FILTER ĐƠN VỊ
 # =========================
 donvi_list = sorted(df["donvi"].dropna().unique())
-
-# thêm option toàn trường
 options = ["Toàn trường"] + list(donvi_list)
 
 selected = st.sidebar.multiselect(
@@ -51,110 +54,137 @@ selected = st.sidebar.multiselect(
     default=["Phòng Hành chính Tổng hợp"]
 )
 
-# xử lý logic
 if "Toàn trường" in selected or len(selected) == 0:
     df_f = df.copy()
 else:
     df_f = df[df["donvi"].isin(selected)]
 
 # =========================
-# TAB
+# DASHBOARD
 # =========================
-tab1, tab2 = st.tabs(["📊 Dashboard", "📈 Tổng hợp"])
+if menu == "Dashboard":
+    st.title("📊 Dashboard sự kiện")
 
-# =========================
-# TAB 1 - DASHBOARD
-# =========================
-with tab1:
-    st.title("📊 Dashboard Quản lý sự kiện UMP")
-
-    # KPI
     c1, c2, c3 = st.columns(3)
     c1.metric("Tổng sự kiện", len(df_f))
     c2.metric("Số đơn vị", df_f["donvi"].nunique())
     c3.metric("Địa điểm", df_f["location"].nunique())
 
-    st.divider()
-
-    # Table
-    st.subheader("📋 Dữ liệu chi tiết")
-    st.dataframe(df_f, use_container_width=True)
-
-    # Gantt
-    st.subheader("📅 Biểu đồ Gantt")
-
-    df_g = df_f.dropna(subset=["start"])
+    st.dataframe(df_f)
 
     fig = px.timeline(
-        df_g,
+        df_f,
         x_start="start",
         x_end="end",
         y="event",
-        color="donvi",
-        hover_data=["location"]
+        color="donvi"
     )
-
     fig.update_yaxes(autorange="reversed")
-
     st.plotly_chart(fig, use_container_width=True)
 
-    # Summary
-    st.subheader("📊 Số sự kiện theo đơn vị")
-
-    summary = df_f.groupby("donvi").size().reset_index(name="count")
-    fig2 = px.bar(summary, x="donvi", y="count")
-    st.plotly_chart(fig2, use_container_width=True)
-
 # =========================
-# TAB 2 - TỔNG HỢP
+# TỔNG HỢP
 # =========================
-with tab2:
+elif menu == "Tổng hợp":
     st.title("📊 Báo cáo tổng hợp")
 
     today = datetime.today()
     current_month = today.month
     current_year = today.year
 
-    # tháng hiện tại (tính đến hôm nay)
     df_month = df[
         (df["start"].dt.year == current_year) &
         (df["start"].dt.month == current_month) &
         (df["start"] <= today)
     ]
 
-    # YTD (đến hôm nay)
     df_ytd = df[
         (df["start"].dt.year == current_year) &
         (df["start"] <= today)
     ]
 
-    # ----- THÁNG -----
-    st.subheader(f"📅 Tháng {current_month}/{current_year}")
+    st.subheader(f"Tháng {current_month}")
+    st.metric("Sự kiện", len(df_month))
 
-    c1, c2 = st.columns(2)
-    c1.metric("Số sự kiện", len(df_month))
-    c2.metric("Số đơn vị", df_month["donvi"].nunique())
+    st.subheader("YTD")
+    st.metric("Sự kiện", len(df_ytd))
 
-    summary_month = df_month.groupby("donvi").size().reset_index(name="count")
-    st.bar_chart(summary_month.set_index("donvi"))
+# =========================
+# TRỢ GIÚP (AI logic)
+# =========================
+elif menu == "Trợ giúp":
+    st.title("🤖 Trợ giúp")
 
-    st.divider()
+    query = st.text_input("Nhập câu hỏi (ví dụ: sự kiện trong tuần)")
 
-    # ----- YTD -----
-    st.subheader(f"📅 Từ đầu năm đến hiện tại")
+    if query:
+        q = query.lower()
+        today = datetime.today()
 
-    c1, c2 = st.columns(2)
-    c1.metric("Số sự kiện", len(df_ytd))
-    c2.metric("Số đơn vị", df_ytd["donvi"].nunique())
+        # mới nhất
+        if "mới nhất" in q:
+            latest = df.sort_values("start", ascending=False).head(5)
+            st.write("Sự kiện mới nhất:")
+            st.dataframe(latest)
 
-    summary_ytd = df_ytd.groupby("donvi").size().reset_index(name="count")
-    st.bar_chart(summary_ytd.set_index("donvi"))
+        # trong tuần
+        elif "tuần" in q:
+            week = df[
+                (df["start"] >= today - pd.Timedelta(days=7)) &
+                (df["start"] <= today)
+            ]
+            st.write("Sự kiện trong tuần:")
+            st.dataframe(week)
+
+        # cần hỗ trợ
+        elif "hỗ trợ" in q:
+            support_df = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
+
+            if len(support_df) > 0:
+                st.write("Sự kiện cần hỗ trợ:")
+                st.dataframe(support_df)
+
+                if "support" in support_df.columns:
+                    st.write("Loại hỗ trợ:")
+                    st.write(support_df["support"].dropna().unique())
+            else:
+                st.write("Không có sự kiện cần hỗ trợ")
+
+        # đông người
+        elif "đông" in q or "100" in q:
+            if "people" in df.columns:
+                crowded = df[df["people"] > 100]
+                st.write("Sự kiện đông người (>100):")
+                st.dataframe(crowded)
+            else:
+                st.warning("Không có dữ liệu số lượng")
+
+        else:
+            st.warning("Chưa hiểu câu hỏi")
+
+# =========================
+# LIÊN HỆ
+# =========================
+elif menu == "Liên hệ":
+    st.title("📞 Liên hệ")
+
+    st.markdown("""
+**Phòng Hành chính Tổng hợp**
+
+Địa chỉ: 217 Hồng Bàng, Phường Chợ Lớn, TP. Hồ Chí Minh  
+
+ĐT: (+84-28) 3855 8411 - (+84-28) 3853 7949 - (+84-28) 3855 5780  
+
+Fax: (+84-28) 3855 2304  
+
+Email: hanhchinh@ump.edu.vn
+""")
 
 # =========================
 # FOOTER
 # =========================
 st.markdown("---")
 st.markdown(
-    "<div style='text-align:center; color:gray;'>© Bản quyền thuộc về TS. Đào Hồng Nam</div>",
+    "<div style='text-align:center; color:gray;'>© TS. Đào Hồng Nam</div>",
     unsafe_allow_html=True
 )
