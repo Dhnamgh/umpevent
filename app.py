@@ -292,8 +292,7 @@ def build_approval_table(df_input):
             "Ngày giờ",
             "Địa điểm",
             "Nội dung hỗ trợ",
-            "Số lượng",
-            "Ghi chú/Giá trị gốc"
+            "Số lượng"
         ])
 
     approval_table = build_support_table(df_input)
@@ -308,8 +307,7 @@ def build_approval_table(df_input):
                 "Ngày giờ": r.get("start").strftime("%d/%m/%Y %H:%M") if pd.notna(r.get("start")) else "",
                 "Địa điểm": r.get("location", ""),
                 "Nội dung hỗ trợ": "Cần kiểm tra/phê duyệt",
-                "Số lượng": 1,
-                "Ghi chú/Giá trị gốc": clean_text(r.get("support", ""))
+                "Số lượng": 1
             })
         approval_table = pd.DataFrame(rows)
 
@@ -318,6 +316,9 @@ def build_approval_table(df_input):
             ["Ngày giờ", "Đơn vị", "Sự kiện", "Nội dung hỗ trợ"],
             ascending=[True, True, True, True]
         ).reset_index(drop=True)
+
+    if "Ghi chú/Giá trị gốc" in approval_table.columns:
+        approval_table = approval_table.drop(columns=["Ghi chú/Giá trị gốc"])
 
     return approval_table
 
