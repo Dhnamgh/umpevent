@@ -13,8 +13,23 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 html, body {font-family: Arial, sans-serif; font-size:16px; color:#111827;}
-section[data-testid="stSidebar"] {width:340px !important;}
+section[data-testid="stSidebar"] {width:255px !important;}
 .block-container {padding-top: 1rem;}
+
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] .stMultiSelect label,
+section[data-testid="stSidebar"] p {
+    font-size: 15px !important;
+}
+
+section[data-testid="stSidebar"] div[data-baseweb="select"] {
+    font-size: 14px !important;
+}
+
+section[data-testid="stSidebar"] {
+    min-width: 255px !important;
+    max-width: 255px !important;
+}
 
 .table-title {
     font-size: 22px;
@@ -266,6 +281,146 @@ def collapse_repeated_support_rows(dataframe):
             last_key = key
 
     return df_out
+
+
+def build_approval_table(df_input):
+    """Tạo bảng Phê duyệt theo đúng mẫu file người dùng gửi."""
+    columns = [
+        "id",
+        "Sự kiện",
+        "Đơn vị",
+        "Bắt đầu",
+        "Kết thúc",
+        "Địa điểm",
+        "Người phụ trách",
+        "Người đăng ký",
+        "Email",
+        "Đối tượng tham gia",
+        "Vấn đề đã được phê duyệt bởi nơi cần đăng ký",
+        "Cấp nhật thông tin diễn ra sự kiện lên website",
+        "Một số thông tin tham về sự kiện",
+        "Hỗ trợ",
+        "Bàn đón tiếp",
+        "Khăn bàn",
+        "Lễ tân",
+        "Bảng tên",
+        "Bìa ký kết",
+        "Nước uống",
+        "Teabreak",
+        "Hoa để bàn",
+        "Hoa để bục",
+        "Hoa tặng",
+        "Quà tặng",
+        "Brochure",
+        "Khay bưng",
+        "Bandroll và standee",
+        "Backdrop",
+        "Bảng điện tử",
+        "Thư mời",
+        "Khác",
+        "Tập tin đính kèm (nếu có)",
+        "Ý kiến của Phòng Hành chính Tổng hợp"
+    ]
+
+    if df_input is None or len(df_input) == 0:
+        return pd.DataFrame(columns=columns)
+
+    def pick(row, names, default=""):
+        for name in names:
+            if name in row.index:
+                value = clean_text(row.get(name, ""))
+                if value and value.lower() != "nan":
+                    return value
+        return default
+
+    def fmt_dt(value):
+        if pd.isna(value):
+            return ""
+        try:
+            return value.strftime("%-m/%-d/%Y %H:%M")
+        except Exception:
+            try:
+                return value.strftime("%m/%d/%Y %H:%M")
+            except Exception:
+                return clean_text(value)
+
+    def normalize_empty(value):
+        value = clean_text(value)
+        if not value or value.lower() == "nan":
+            return "NaN"
+        return value
+
+    rows = []
+    df_out = df_input.copy().sort_values("start", ascending=True).reset_index(drop=True)
+
+    for i, r in df_out.iterrows():
+        support_value = clean_text(r.get("support", ""))
+        if not support_value:
+            support_value = "KHÔNG"
+
+        rows.append({
+            "id": i + 1,
+            "Sự kiện": clean_text(r.get("event", "")),
+            "Đơn vị": clean_text(r.get("donvi", "")),
+            "Bắt đầu": fmt_dt(r.get("start")),
+            "Kết thúc": fmt_dt(r.get("end")),
+            "Địa điểm": clean_text(r.get("location", "")),
+
+            "Người phụ trách": pick(r, ["Người phụ trách", "Người phụ trách sự kiện", "nguoi_phu_trach", "contact_person"]),
+            "Người đăng ký": pick(r, ["Người đăng ký", "Người đăng kí", "nguoi_dang_ky", "registrant"]),
+            "Email": pick(r, ["Email", "email", "Địa chỉ email", "Email Address"]),
+
+            "Đối tượng tham gia": pick(r, ["Đối tượng tham gia", "doi_tuong_tham_gia"]),
+            "Vấn đề đã được phê duyệt bởi nơi cần đăng ký": pick(r, [
+                "Vấn đề đã được phê duyệt bởi nơi cần đăng ký",
+                "Đã được phê duyệt bởi nơi cần đăng ký",
+                "van_de_da_duoc_phe_duyet"
+            ]),
+            "Cấp nhật thông tin diễn ra sự kiện lên website": pick(r, [
+                "Cập nhật thông tin diễn ra sự kiện lên website",
+                "Cấp nhật thông tin diễn ra sự kiện lên website",
+                "cap_nhat_website"
+            ]),
+            "Một số thông tin tham về sự kiện": pick(r, [
+                "Một số thông tin tham về sự kiện",
+                "Một số thông tin thêm về sự kiện",
+                "Thông tin thêm",
+                "thong_tin_them"
+            ]),
+
+            "Hỗ trợ": support_value,
+            "Bàn đón tiếp": normalize_empty(r.get("support_ban_don_tiep", "")),
+            "Khăn bàn": normalize_empty(r.get("support_khan_ban", "")),
+            "Lễ tân": normalize_empty(r.get("support_le_tan", "")),
+            "Bảng tên": normalize_empty(r.get("support_bang_ten", "")),
+            "Bìa ký kết": normalize_empty(r.get("support_bia_ky_ket", "")),
+            "Nước uống": normalize_empty(r.get("support_nuoc_uong", "")),
+            "Teabreak": normalize_empty(r.get("support_teabreak", "")),
+            "Hoa để bàn": normalize_empty(r.get("support_hoa_ban", "")),
+            "Hoa để bục": normalize_empty(r.get("support_hoa_buc", "")),
+            "Hoa tặng": normalize_empty(r.get("support_hoa_tang", "")),
+            "Quà tặng": normalize_empty(r.get("support_qua_tang", "")),
+            "Brochure": normalize_empty(r.get("support_brochure", "")),
+            "Khay bưng": normalize_empty(r.get("support_khay_bung", "")),
+            "Bandroll và standee": normalize_empty(r.get("support_bandroll_standee", "")),
+            "Backdrop": normalize_empty(r.get("support_backdrop", "")),
+            "Bảng điện tử": normalize_empty(r.get("support_bang_dien_tu", "")),
+            "Thư mời": normalize_empty(r.get("support_thu_moi", "")),
+            "Khác": normalize_empty(r.get("support_khac", "")),
+            "Tập tin đính kèm (nếu có)": pick(r, [
+                "Tập tin đính kèm (nếu có)",
+                "Tập tin đính kèm",
+                "File đính kèm",
+                "attachment"
+            ], default="NaN"),
+            "Ý kiến của Phòng Hành chính Tổng hợp": pick(r, [
+                "Ý kiến của Phòng Hành chính Tổng hợp",
+                "Ý kiến P.HCTH",
+                "y_kien_hcth"
+            ])
+        })
+
+    return pd.DataFrame(rows, columns=columns)
 
 
 # ================= LOAD DATA =================
@@ -758,10 +913,15 @@ elif menu == "Trợ giúp":
 
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
+    st.subheader("📋 Sự kiện cần phê duyệt")
+
+    approval_table = build_approval_table(df_month)
+
     show_table_with_download(
-        "📋 Sự kiện cần phê duyệt",
-        df_month,
-        "su_kien_can_phe_duyet.xlsx"
+        "Bảng sự kiện cần phê duyệt",
+        approval_table,
+        "su_kien_can_phe_duyet.xlsx",
+        compact=True
     )
 
 # ================= LIÊN HỆ =================
