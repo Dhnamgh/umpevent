@@ -2,33 +2,24 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
+import gspread
+from google.oauth2.service_account import Credentials
+from openai import OpenAI
 
 st.set_page_config(layout="wide")
 
-# ================= CSS =================
+# ================= STYLE =================
 st.markdown("""
 <style>
-section[data-testid="stSidebar"] {
-    width: 360px !important;
-}
-
-.menu-btn {
-    background-color: #1976d2;
-    color: white;
-    padding: 10px;
-    border-radius: 6px;
-    margin-bottom: 8px;
-    text-align: center;
-    font-weight: bold;
-}
+html, body {font-size:16px; color:#000;}
+section[data-testid="stSidebar"] {width:360px !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================= LOAD =================
+# ================= LOAD DATA =================
 @st.cache_data(ttl=600)
 def load_data():
-    url = st.secrets["data"]["csv_url"]
-    df = pd.read_csv(url)
+    df = pd.read_csv(st.secrets["data"]["csv_url"])
 
     df = df.rename(columns={
         "Tên sự kiện": "event",
@@ -49,157 +40,120 @@ def load_data():
 df = load_data()
 today = datetime.today()
 
-# ================= MENU SIDEBAR =================
-st.sidebar.title("📋 MENU")
+# ================= GOOGLE SHEETS =================
+def connect_sheet():
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    return gspread.authorize(creds)
 
-menu = st.sidebar.radio(
-    "",
+def update_status(event, status):
+    client = connect_sheet()
+    sheet = client.open_by_url(st.secrets["data"]["sheet_url"]).sheet1
+    data = sheet.get_all_records()
+
+    for i, row in enumerate(data):
+        if row["Tên sự kiện"] == event:
+            sheet.update_cell(i+2, len(row)+1, status)
+            return True
+    return False
+
+# ================= AI =================
+def ask_ai(q):
+    client = OpenAI(api_key=st.secrets["ai"]["api_key"])
+    sample = df.head(50).to_string()
+
+    prompt = f"""
+Dữ liệu:
+{sample}
+
+Câu hỏi: {q}
+
+Trả lời ngắn gọn.
+"""
+
+    res = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role":"user","content":prompt}]
+    )
+
+    return res.choices[0].message.content
+
+# ================= MENU =================
+menu = st.sidebar.radio("MENU",
     ["Dashboard", "Tổng hợp", "Trợ giúp", "Phê duyệt SK", "Liên hệ"]
 )
 
 # ================= FILTER =================
 donvi_list = sorted(df["donvi"].dropna().unique())
-options = ["Toàn trường"] + list(donvi_list)
 
 selected = st.sidebar.multiselect(
     "Chọn đơn vị",
-    options,
+    ["Toàn trường"] + donvi_list,
     default=["Phòng Hành chính Tổng hợp"]
 )
 
-if "Toàn trường" in selected or len(selected) == 0:
+if "Toàn trường" in selected or len(selected)==0:
     df_f = df.copy()
 else:
     df_f = df[df["donvi"].isin(selected)]
 
 # ================= DASHBOARD =================
-if menu == "Dashboard":
+if menu=="Dashboard":
 
-    st.title("📊 Dashboard")
+    df_year = df[df["start"].dt.year==today.year]
+    df_month = df_year[df_year["start"].dt.month==today.month]
+    df_week = df_year[df_year["start"]>=today-timedelta(days=7)]
 
-    df_year = df[df["start"].dt.year == today.year]
-    df_month = df_year[df_year["start"].dt.month == today.month]
-    df_week = df_year[df_year["start"] >= today - timedelta(days=7)]
-
-    # KPI
-    c1, c2, c3 = st.columns(3)
+    c1,c2,c3 = st.columns(3)
     c1.metric("Tuần", len(df_week))
     c2.metric("Tháng", len(df_month))
     c3.metric("Năm", len(df_year))
 
-    # danh sách tháng
-    st.subheader("📅 Sự kiện trong tháng")
-    st.dataframe(df_month.sort_values("start"), use_container_width=True)
+    st.subheader("Sự kiện tháng")
+    st.dataframe(df_month.sort_values("start"))
 
-    # timeline chỉ năm hiện hành
-    st.subheader("📈 Timeline năm hiện hành")
-    fig = px.timeline(
-        df_year,
-        x_start="start",
-        x_end="end",
-        y="event",
-        color="donvi"
-    )
+    st.subheader("Timeline")
+    fig=px.timeline(df_year, x_start="start", x_end="end", y="event", color="donvi")
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
-# ================= TỔNG HỢP =================
-elif menu == "Tổng hợp":
-    st.title("📊 Tổng hợp")
-
-    df_year = df[df["start"].dt.year == today.year]
-    df_month = df_year[df_year["start"].dt.month == today.month]
-
-    st.metric("Tháng", len(df_month))
-    st.metric("Năm", len(df_year))
-
-# ================= TRỢ GIÚP =================
-elif menu == "Trợ giúp":
-
-    st.title("🤖 Trợ giúp")
-
-    q = st.text_input("Nhập câu hỏi")
-
+# ================= AI =================
+elif menu=="Trợ giúp":
+    q = st.text_input("Hỏi")
     if q:
-        q = q.lower()
+        st.write(ask_ai(q))
 
-        if "tuần" in q:
-            res = df[df["start"] >= today - timedelta(days=7)]
-            st.dataframe(res)
+# ================= APPROVAL =================
+elif menu=="Phê duyệt SK":
 
-        elif "tháng" in q:
-            res = df[
-                (df["start"].dt.month == today.month) &
-                (df["start"].dt.year == today.year)
-            ]
-            st.dataframe(res)
+    pwd = st.text_input("Mật khẩu", type="password")
 
-        elif "mới" in q:
-            st.dataframe(df.sort_values("start", ascending=False).head(5))
+    if pwd==st.secrets["auth"]["password"]:
 
-        elif "hỗ trợ" in q:
-            support_df = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
-
-            st.dataframe(support_df)
-
-            if "support" in support_df.columns:
-                st.subheader("🔧 Nội dung hỗ trợ")
-                for s in support_df["support"].dropna().unique():
-                    st.markdown(f"- {s}")
-
-        elif "đông" in q:
-            if "people" in df.columns:
-                st.dataframe(df[df["people"] > 100])
-
-        else:
-            st.warning("Chưa hiểu câu hỏi")
-
-# ================= PHÊ DUYỆT =================
-elif menu == "Phê duyệt SK":
-
-    st.title("🔐 Phê duyệt sự kiện")
-
-    password = st.text_input("Nhập mật khẩu", type="password")
-
-    if "auth" not in st.session_state:
-        st.session_state["auth"] = False
-
-    if password:
-        if password == st.secrets["auth"]["password"]:
-            st.session_state["auth"] = True
-        else:
-            st.error("Sai mật khẩu")
-
-    if st.session_state["auth"]:
-        st.success("Đã đăng nhập")
-
-        df["status"] = df.get("status", "Chờ")
-
-        choice = st.selectbox("Chọn trạng thái", ["Thống nhất", "Chưa thống nhất", "Cần liên hệ"])
-
-        event = st.selectbox("Chọn sự kiện", df["event"])
+        event = st.selectbox("Sự kiện", df["event"])
+        status = st.selectbox("Trạng thái",
+            ["Thống nhất", "Chưa thống nhất", "Cần liên hệ"]
+        )
 
         if st.button("Cập nhật"):
-            df.loc[df["event"] == event, "status"] = choice
-            st.success(f"Đã cập nhật: {event} → {choice}")
+            if update_status(event, status):
+                st.success("Đã lưu")
+            else:
+                st.error("Không tìm thấy")
 
-        st.dataframe(df[["event", "status"]])
+    else:
+        st.warning("Nhập mật khẩu")
 
-# ================= LIÊN HỆ =================
-elif menu == "Liên hệ":
-
-    st.title("📞 Liên hệ")
-
+# ================= CONTACT =================
+elif menu=="Liên hệ":
     st.markdown("""
 **Phòng Hành chính Tổng hợp**
 
-Địa chỉ: 217 Hồng Bàng, Phường Chợ Lớn, TP.HCM  
+217 Hồng Bàng, TP.HCM  
+Email: hanhchinh@ump.edu.vn
+""")
 
-ĐT: (+84-28) 3855 8411 - 3853 7949 - 3855 5780  
-
-Email: <a href="mailto:hanhchinh@ump.edu.vn">hanhchinh@ump.edu.vn</a>
-""", unsafe_allow_html=True)
-
-# ================= FOOTER =================
 st.markdown("---")
 st.markdown("<center>© TS. Đào Hồng Nam</center>", unsafe_allow_html=True)
