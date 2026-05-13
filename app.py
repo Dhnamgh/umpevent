@@ -1,13 +1,29 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="UMP Dashboard", layout="wide")
+st.set_page_config(layout="wide")
 
-# =========================
-# LOAD DATA
-# =========================
+# ================= CSS =================
+st.markdown("""
+<style>
+section[data-testid="stSidebar"] {
+    width: 320px !important;
+}
+.menu-btn {
+    background-color: #1976d2;
+    color: white;
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+    margin-right: 10px;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ================= LOAD =================
 @st.cache_data(ttl=600)
 def load_data():
     url = st.secrets["data"]["csv_url"]
@@ -27,24 +43,31 @@ def load_data():
     df["end"] = pd.to_datetime(df["end"], errors="coerce")
     df["end"] = df["end"].fillna(df["start"])
 
-    df["month"] = df["start"].dt.month
-    df["year"] = df["start"].dt.year
-
     return df
 
 df = load_data()
 
-# =========================
-# MENU SIDEBAR
-# =========================
-menu = st.sidebar.radio(
-    "📋 Chức năng",
-    ["Dashboard", "Tổng hợp", "Trợ giúp", "Liên hệ"]
-)
+today = datetime.today()
 
-# =========================
-# FILTER ĐƠN VỊ
-# =========================
+# ================= MENU NGANG =================
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    if st.button("📊 Dashboard"):
+        st.session_state["menu"] = "Dashboard"
+with col2:
+    if st.button("📈 Tổng hợp"):
+        st.session_state["menu"] = "Tổng hợp"
+with col3:
+    if st.button("🤖 Trợ giúp"):
+        st.session_state["menu"] = "Trợ giúp"
+with col4:
+    if st.button("📞 Liên hệ"):
+        st.session_state["menu"] = "Liên hệ"
+
+menu = st.session_state.get("menu", "Dashboard")
+
+# ================= FILTER =================
 donvi_list = sorted(df["donvi"].dropna().unique())
 options = ["Toàn trường"] + list(donvi_list)
 
@@ -59,18 +82,34 @@ if "Toàn trường" in selected or len(selected) == 0:
 else:
     df_f = df[df["donvi"].isin(selected)]
 
-# =========================
-# DASHBOARD
-# =========================
+# ================= DASHBOARD =================
 if menu == "Dashboard":
-    st.title("📊 Dashboard sự kiện")
+
+    st.title("📊 Dashboard")
+
+    # ===== KPI =====
+    week_start = today - timedelta(days=7)
+
+    df_week = df[df["start"] >= week_start]
+    df_month = df[
+        (df["start"].dt.month == today.month) &
+        (df["start"].dt.year == today.year)
+    ]
+    df_year = df[df["start"].dt.year == today.year]
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tổng sự kiện", len(df_f))
-    c2.metric("Số đơn vị", df_f["donvi"].nunique())
-    c3.metric("Địa điểm", df_f["location"].nunique())
+    c1.metric("Trong tuần", len(df_week))
+    c2.metric("Trong tháng", len(df_month))
+    c3.metric("Trong năm", len(df_year))
 
-    st.dataframe(df_f)
+    # ===== LIST MONTH =====
+    st.subheader("📅 Sự kiện trong tháng")
+
+    df_month_sorted = df_month.sort_values("start")
+    st.dataframe(df_month_sorted, use_container_width=True)
+
+    # ===== GANTT =====
+    st.subheader("📈 Timeline")
 
     fig = px.timeline(
         df_f,
@@ -82,90 +121,74 @@ if menu == "Dashboard":
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
-# =========================
-# TỔNG HỢP
-# =========================
+# ================= TỔNG HỢP =================
 elif menu == "Tổng hợp":
-    st.title("📊 Báo cáo tổng hợp")
 
-    today = datetime.today()
-    current_month = today.month
-    current_year = today.year
+    st.title("📊 Tổng hợp")
 
     df_month = df[
-        (df["start"].dt.year == current_year) &
-        (df["start"].dt.month == current_month) &
-        (df["start"] <= today)
+        (df["start"].dt.month == today.month) &
+        (df["start"].dt.year == today.year)
     ]
 
-    df_ytd = df[
-        (df["start"].dt.year == current_year) &
-        (df["start"] <= today)
-    ]
+    df_ytd = df[df["start"].dt.year == today.year]
 
-    st.subheader(f"Tháng {current_month}")
-    st.metric("Sự kiện", len(df_month))
+    st.metric("Tháng", len(df_month))
+    st.metric("Năm", len(df_ytd))
 
-    st.subheader("YTD")
-    st.metric("Sự kiện", len(df_ytd))
-
-# =========================
-# TRỢ GIÚP (AI logic)
-# =========================
+# ================= TRỢ GIÚP =================
 elif menu == "Trợ giúp":
+
     st.title("🤖 Trợ giúp")
 
-    query = st.text_input("Nhập câu hỏi (ví dụ: sự kiện trong tuần)")
+    q = st.text_input("Hỏi:")
 
-    if query:
-        q = query.lower()
-        today = datetime.today()
+    if q:
+        q = q.lower()
 
-        # mới nhất
-        if "mới nhất" in q:
-            latest = df.sort_values("start", ascending=False).head(5)
-            st.write("Sự kiện mới nhất:")
-            st.dataframe(latest)
-
-        # trong tuần
-        elif "tuần" in q:
+        # tuần
+        if "tuần" in q:
             week = df[
-                (df["start"] >= today - pd.Timedelta(days=7)) &
+                (df["start"] >= today - timedelta(days=7)) &
                 (df["start"] <= today)
             ]
-            st.write("Sự kiện trong tuần:")
             st.dataframe(week)
 
-        # cần hỗ trợ
+        # tháng ✅ FIX
+        elif "tháng" in q:
+            month = df[
+                (df["start"].dt.month == today.month) &
+                (df["start"].dt.year == today.year)
+            ]
+            st.dataframe(month)
+
+        # mới nhất
+        elif "mới" in q:
+            latest = df.sort_values("start", ascending=False).head(5)
+            st.dataframe(latest)
+
+        # hỗ trợ
         elif "hỗ trợ" in q:
             support_df = df[df["donvi"] == "Phòng Hành chính Tổng hợp"]
 
-            if len(support_df) > 0:
-                st.write("Sự kiện cần hỗ trợ:")
-                st.dataframe(support_df)
+            st.dataframe(support_df)
 
-                if "support" in support_df.columns:
-                    st.write("Loại hỗ trợ:")
-                    st.write(support_df["support"].dropna().unique())
-            else:
-                st.write("Không có sự kiện cần hỗ trợ")
+            if "support" in support_df.columns:
+                st.subheader("🔧 Nội dung hỗ trợ")
+                for item in support_df["support"].dropna().unique():
+                    st.markdown(f"- {item}")
 
         # đông người
         elif "đông" in q or "100" in q:
-            if "people" in df.columns:
-                crowded = df[df["people"] > 100]
-                st.write("Sự kiện đông người (>100):")
-                st.dataframe(crowded)
-            else:
-                st.warning("Không có dữ liệu số lượng")
+            crowded = df[df["people"] > 100]
+            st.dataframe(crowded)
 
         else:
             st.warning("Chưa hiểu câu hỏi")
 
-# =========================
-# LIÊN HỆ
-# =========================
+# ================= LIÊN HỆ =================
 elif menu == "Liên hệ":
+
     st.title("📞 Liên hệ")
 
     st.markdown("""
@@ -177,14 +200,12 @@ elif menu == "Liên hệ":
 
 Fax: (+84-28) 3855 2304  
 
-Email: hanhchinh@ump.edu.vn
-""")
+Email: <a href="mailto:hanhchinh@ump.edu.vn">hanhchinh@ump.edu.vn</a>
+""", unsafe_allow_html=True)
 
-# =========================
-# FOOTER
-# =========================
+# ================= FOOTER =================
 st.markdown("---")
 st.markdown(
-    "<div style='text-align:center; color:gray;'>© TS. Đào Hồng Nam</div>",
+    "<center>© TS. Đào Hồng Nam</center>",
     unsafe_allow_html=True
 )
