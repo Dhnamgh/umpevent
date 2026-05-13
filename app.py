@@ -7,38 +7,14 @@ import re
 
 st.set_page_config(layout="wide")
 
-# ================= STYLE FIX =================
+# ================= STYLE =================
 st.markdown("""
 <style>
-
-/* sidebar rộng */
-section[data-testid="stSidebar"] {
-    width: 340px !important;
-}
-
-/* FIX FULLCALENDAR TEXT */
-.fc-event-title {
-    white-space: normal !important;
-    overflow: visible !important;
-}
-
-.fc-daygrid-event {
-    height: auto !important;
-}
-
-.fc-event {
-    font-size: 12px !important;
-}
-
-/* tooltip đẹp hơn */
-.fc-event:hover {
-    z-index: 999 !important;
-}
-
+html, body {font-family: Arial; font-size:16px;}
+section[data-testid="stSidebar"] {width:340px !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ================= TITLE =================
 st.title("📊 Quản lý sự kiện UMP")
 
 # ================= PARSE GIỜ =================
@@ -46,7 +22,6 @@ def parse_time(text):
     if pd.isna(text):
         return None
     text = str(text).lower()
-
     m = re.search(r"(\\d{1,2})\\s*[gh:]\\s*(\\d{0,2})", text)
     if m:
         hour = int(m.group(1))
@@ -54,7 +29,7 @@ def parse_time(text):
         return hour, minute
     return None
 
-# ================= LOAD =================
+# ================= LOAD DATA =================
 @st.cache_data
 def load_data():
     df = pd.read_csv(st.secrets["data"]["csv_url"])
@@ -75,13 +50,13 @@ def load_data():
     df["end"] = pd.to_datetime(df["end"], errors="coerce").fillna(df["start"])
 
     for i in range(len(df)):
-        t = parse_time(df.loc[i, "start_time"])
+        t = parse_time(df.loc[i].get("start_time"))
         if t:
-            df.loc[i, "start"] = df.loc[i, "start"].replace(hour=t[0], minute=t[1])
+            df.loc[i,"start"] = df.loc[i,"start"].replace(hour=t[0], minute=t[1])
 
-        t2 = parse_time(df.loc[i, "end_time"])
+        t2 = parse_time(df.loc[i].get("end_time"))
         if t2:
-            df.loc[i, "end"] = df.loc[i, "end"].replace(hour=t2[0], minute=t2[1])
+            df.loc[i,"end"] = df.loc[i,"end"].replace(hour=t2[0], minute=t2[1])
 
     return df
 
@@ -91,7 +66,7 @@ today = datetime.today()
 # ================= MENU =================
 menu = st.sidebar.radio(
     "MENU",
-    ["Dashboard", "Cảnh báo", "Liên hệ"]
+    ["Dashboard","Báo cáo","Cảnh báo","Trợ giúp","Phê duyệt","Liên hệ"]
 )
 
 # ================= FILTER =================
@@ -108,88 +83,113 @@ st.sidebar.write("✅ Đang chọn:", ", ".join(selected))
 df_f = df if "Toàn trường" in selected else df[df["donvi"].isin(selected)]
 
 df_year = df_f[df_f["start"].dt.year == today.year]
+df_month = df_year[df_year["start"].dt.month == today.month]
 
 # ================= DASHBOARD =================
 if menu == "Dashboard":
 
     st.subheader(f"📅 Lịch sự kiện - Tháng {today.month}/{today.year}")
 
-    # ===== BUILD EVENTS =====
     events = []
 
-    for _, row in df_year.iterrows():
-
-        s = row["start"]
-        e = row["end"]
+    for _, r in df_year.iterrows():
+        s = r["start"]
+        e = r["end"]
 
         has_time = not (s.hour == 0 and s.minute == 0)
 
         start_str = s.strftime("%Y-%m-%d %H:%M") if has_time else s.strftime("%Y-%m-%d")
         end_str = e.strftime("%Y-%m-%d %H:%M") if has_time else e.strftime("%Y-%m-%d")
 
-        full_info = f"{row['event']} | {row['location']}"
-
         events.append({
-            "title": row["event"],
+            "title": r["event"],
             "start": start_str,
             "end": end_str,
-            "color": "#1976d2",
             "extendedProps": {
-                "info": full_info,
-                "donvi": row["donvi"],
-                "location": row["location"],
+                "event": r["event"],
+                "donvi": r["donvi"],
+                "location": r["location"],
                 "time": start_str,
-                "support": str(row.get("support",""))
+                "support": str(r.get("support",""))
             }
         })
 
-    # ===== CALENDAR =====
-    options = {
-        "initialView": "dayGridMonth",
-        "locale": "vi",
-        "height": 650,
+    selected_event = calendar(
+        events=events,
+        options={
+            "initialView":"dayGridMonth",
+            "locale":"vi",
+            "height":650
+        }
+    )
 
-        # ✅ TOOLTIP FULL
-        "eventDidMount": """
-function(info) {
-    info.el.title = info.event.extendedProps.info;
-}
-""",
+    # ✅ HIỂN THỊ CHI TIẾT (KHÔNG JS)
+    if selected_event and "event" in selected_event:
+        e = selected_event["event"]["extendedProps"]
 
-        # ✅ CLICK DETAIL
-        "eventClick": """
-function(info) {
-    let e = info.event.extendedProps;
+        st.subheader("📋 Chi tiết sự kiện")
 
-    alert(
-        "Sự kiện: " + info.event.title + "\\n" +
-        "Đơn vị: " + e.donvi + "\\n" +
-        "Địa điểm: " + e.location + "\\n" +
-        "Thời gian: " + e.time + "\\n" +
-        "Hỗ trợ: " + e.support
-    );
-}
-"""
-    }
+        st.write("📌", e.get("event",""))
+        st.write("🏢", e.get("donvi",""))
+        st.write("📍", e.get("location",""))
+        st.write("🕒", e.get("time",""))
+        st.write("🛠", e.get("support",""))
 
-    calendar(events=events, options=options)
+    # KPI
+    df_week = df_year[
+        (df_year["start"] >= today - timedelta(days=7))
+    ]
+
+    c1,c2,c3 = st.columns(3)
+    c1.metric("Tuần", len(df_week))
+    c2.metric("Tháng", len(df_month))
+    c3.metric("Năm", len(df_year))
+
+    # SUPPORT
+    st.subheader("🛠️ Cần hỗ trợ")
+
+    support_df = df_month[df_month["donvi"]=="Phòng Hành chính Tổng hợp"]
+
+    if "support" in support_df.columns and len(support_df)>0:
+        valid = support_df["support"].dropna()
+        if len(valid)>0:
+            ss = valid.value_counts().reset_index()
+            ss.columns = ["Loại","Số lượng"]
+            st.table(ss)
+        else:
+            st.info("Không có dữ liệu hỗ trợ")
+    else:
+        st.info("Không có dữ liệu hỗ trợ")
+
+# ================= BÁO CÁO =================
+elif menu=="Báo cáo":
+
+    summary = df_month.groupby("donvi").size().reset_index(name="count")
+
+    fig = px.bar(summary,x="donvi",y="count",text="count")
+    fig.update_traces(textposition='outside')
+
+    st.plotly_chart(fig,use_container_width=True)
 
 # ================= CẢNH BÁO =================
-elif menu == "Cảnh báo":
+elif menu=="Cảnh báo":
 
     st.subheader("⚠️ Trùng lịch")
 
-    df_check = df[(df["start"] >= today) & (df["start"] <= today + timedelta(days=30))]
+    df_check = df[
+        (df["start"]>=today) &
+        (df["start"]<=today+timedelta(days=30))
+    ]
 
     for i in range(len(df_check)):
-        for j in range(i+1, len(df_check)):
-            if df_check.iloc[i]["start"] == df_check.iloc[j]["start"]:
+        for j in range(i+1,len(df_check)):
+            if df_check.iloc[i]["start"]==df_check.iloc[j]["start"]:
 
-                t = df_check.iloc[i]["start"]
+                t=df_check.iloc[i]["start"]
 
-                time_str = (
+                time_str=(
                     t.strftime("%H:%M %d/%m/%Y")
-                    if not (t.hour == 0 and t.minute == 0)
+                    if not (t.hour==0 and t.minute==0)
                     else t.strftime("%d/%m/%Y")
                 )
 
@@ -199,12 +199,39 @@ Trùng lịch: {time_str}
 • {df_check.iloc[j]['event']} - {df_check.iloc[j]['location']}
 """)
 
+# ================= TRỢ GIÚP =================
+elif menu=="Trợ giúp":
+
+    st.subheader("Trợ giúp")
+    q=st.text_input("Nhập câu hỏi")
+
+    if q:
+        q=q.lower()
+
+        if "tháng" in q:
+            st.dataframe(df_month)
+
+        elif "năm" in q:
+            st.dataframe(df_year)
+
+        elif "tuần" in q:
+            st.dataframe(df_year.tail(10))
+
+        elif "hỗ trợ" in q:
+            st.dataframe(df_month[df_month["donvi"]=="Phòng Hành chính Tổng hợp"])
+
+# ================= PHÊ DUYỆT =================
+elif menu=="Phê duyệt":
+
+    st.subheader("📋 Sự kiện cần phê duyệt")
+
+    st.dataframe(df_month)
+
 # ================= LIÊN HỆ =================
-elif menu == "Liên hệ":
+elif menu=="Liên hệ":
 
     st.markdown("""
-### 📞 Phòng Hành chính Tổng hợp
-
+Phòng Hành chính Tổng hợp  
 217 Hồng Bàng, Phường Chợ Lớn, TP.HCM  
 
 (+84-28) 3855 8411  
@@ -213,3 +240,6 @@ elif menu == "Liên hệ":
 
 Email: hanhchinh@ump.edu.vn
 """)
+
+st.markdown("---")
+st.markdown("© TS. Đào Hồng Nam")
