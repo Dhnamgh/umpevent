@@ -18,15 +18,64 @@ section[data-testid="stSidebar"] {width:340px !important;}
 
 .table-title {
     font-size: 22px;
-    font-weight: 800;
-    color: #111827;
+    font-weight: 900;
+    color: #020617;
     margin-top: 18px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    font-family: Arial, sans-serif;
+    letter-spacing: -0.2px;
 }
 
 .small-note {
-    color:#374151;
-    font-weight:600;
+    color:#111827;
+    font-weight:700;
+}
+
+.ump-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    margin-bottom: 10px;
+}
+
+.ump-table-wrap.compact {
+    width: fit-content;
+    max-width: 100%;
+}
+
+.ump-table {
+    border-collapse: collapse;
+    font-family: Arial, sans-serif;
+    font-size: 15px;
+    color: #020617 !important;
+    background: white;
+}
+
+.ump-table th {
+    background: #f1f5f9;
+    color: #020617 !important;
+    font-weight: 900;
+    border: 1px solid #cbd5e1;
+    padding: 8px 10px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.ump-table td {
+    color: #020617 !important;
+    font-weight: 650;
+    border: 1px solid #cbd5e1;
+    padding: 7px 10px;
+    vertical-align: top;
+    line-height: 1.35;
+}
+
+.ump-table.compact th,
+.ump-table.compact td {
+    white-space: nowrap;
+}
+
+.ump-table tr:nth-child(even) td {
+    background: #f8fafc;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -175,14 +224,17 @@ def excel_file_name(file_name):
     return base + ".xls"
 
 
-def show_table_with_download(title, dataframe, file_name):
+def show_table_with_download(title, dataframe, file_name, compact=False):
     st.markdown(f'<div class="table-title">{title}</div>', unsafe_allow_html=True)
 
     if dataframe is None or len(dataframe) == 0:
         st.info("Không có dữ liệu")
         return
 
-    st.dataframe(dataframe, use_container_width=True, hide_index=True)
+    css_class = "ump-table compact" if compact else "ump-table"
+    wrap_class = "ump-table-wrap compact" if compact else "ump-table-wrap"
+    html_table = dataframe.to_html(index=False, escape=False, classes=css_class)
+    st.markdown(f'<div class="{wrap_class}">{html_table}</div>', unsafe_allow_html=True)
 
     st.download_button(
         label="⬇️ Tải về Excel",
@@ -191,6 +243,29 @@ def show_table_with_download(title, dataframe, file_name):
         mime="application/vnd.ms-excel",
         use_container_width=False
     )
+
+
+def collapse_repeated_support_rows(dataframe):
+    """Ẩn thông tin lặp lại cho cùng một sự kiện để bảng hỗ trợ dễ đọc hơn."""
+    if dataframe is None or len(dataframe) == 0:
+        return dataframe
+
+    df_out = dataframe.copy()
+    group_cols = ["Sự kiện", "Đơn vị", "Ngày giờ", "Địa điểm"]
+    existing = [c for c in group_cols if c in df_out.columns]
+    if not existing:
+        return df_out
+
+    last_key = None
+    for idx in df_out.index:
+        key = tuple(df_out.at[idx, c] for c in existing)
+        if key == last_key:
+            for c in existing:
+                df_out.at[idx, c] = ""
+        else:
+            last_key = key
+
+    return df_out
 
 
 # ================= LOAD DATA =================
@@ -490,11 +565,13 @@ elif menu == "Báo cáo":
         st.plotly_chart(fig, use_container_width=True)
 
         table_report = summary[["donvi", "Số sự kiện"]].sort_values("Số sự kiện", ascending=False)
-        table_report = table_report.rename(columns={"donvi": "Đơn vị"})
+        table_report = table_report.rename(columns={"donvi": "Đơn vị"}).reset_index(drop=True)
+        table_report.insert(0, "STT", range(1, len(table_report) + 1))
         show_table_with_download(
             f"Bảng báo cáo sự kiện theo đơn vị - {report_label}",
             table_report,
-            f"bao_cao_su_kien_{report_period.lower()}.xlsx"
+            f"bao_cao_su_kien_{report_period.lower()}.xlsx",
+            compact=True
         )
 
 # ================= CẢNH BÁO =================
@@ -569,63 +646,12 @@ elif menu == "Hỗ trợ":
     if len(support_table) == 0:
         st.info("Không có thông tin cần hỗ trợ")
     else:
+        support_table = support_table.sort_values(["Ngày giờ", "Đơn vị", "Sự kiện", "Nội dung hỗ trợ"]).reset_index(drop=True)
+        display_support_table = collapse_repeated_support_rows(support_table)
         show_table_with_download(
             f"Bảng sự kiện cần hỗ trợ - {support_label}",
-            support_table,
+            display_support_table,
             f"su_kien_can_ho_tro_{support_period.lower()}.xlsx"
-        )
-
-        chart_df = (
-            support_table.groupby(["Sự kiện", "Đơn vị", "Ngày giờ", "Nội dung hỗ trợ"], as_index=False)["Số lượng"]
-            .sum()
-            .sort_values("Số lượng", ascending=False)
-        )
-
-        chart_df["Nhãn sự kiện"] = chart_df["Sự kiện"].apply(lambda x: wrap_label(x, 28))
-
-        fig = px.bar(
-            chart_df,
-            x="Nhãn sự kiện",
-            y="Số lượng",
-            color="Nội dung hỗ trợ",
-            text="Số lượng",
-            hover_data={
-                "Sự kiện": True,
-                "Đơn vị": True,
-                "Ngày giờ": True,
-                "Nhãn sự kiện": False
-            },
-            barmode="group",
-            height=max(620, 90 + 58 * chart_df["Sự kiện"].nunique())
-        )
-
-        fig.update_traces(
-            textposition="outside",
-            textfont=dict(size=15, color="black", family="Arial Black")
-        )
-
-        fig.update_layout(
-            title=dict(text=f"Biểu đồ thống kê nội dung cần hỗ trợ - {support_label}", font=dict(size=23, color="black", family="Arial Black")),
-            xaxis=dict(title="Sự kiện", tickangle=-15, tickfont=dict(size=13, color="black", family="Arial Black"), automargin=True),
-            yaxis=dict(title="Số lượng", tickfont=dict(size=15, color="black", family="Arial Black"), title_font=dict(size=16, color="black", family="Arial Black")),
-            legend=dict(title="Nội dung hỗ trợ", font=dict(size=13, color="black")),
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            margin=dict(l=40, r=40, t=80, b=180)
-        )
-
-        st.plotly_chart(fig, use_container_width=True)
-
-        summary_support = (
-            support_table.groupby(["Nội dung hỗ trợ"], as_index=False)["Số lượng"]
-            .sum()
-            .sort_values("Số lượng", ascending=False)
-        )
-
-        show_table_with_download(
-            f"Bảng tổng hợp số lượng hỗ trợ - {support_label}",
-            summary_support,
-            f"tong_hop_ho_tro_{support_period.lower()}.xlsx"
         )
 
 # ================= TRỢ GIÚP =================
