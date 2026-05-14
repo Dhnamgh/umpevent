@@ -77,6 +77,16 @@ section[data-testid="stSidebar"] {width:255px !important; min-width:255px !impor
 .ump-table tr:nth-child(even) td {
     background: #f8fafc;
 }
+
+
+@media (max-width: 768px) {
+    iframe {
+        overflow-x: auto !important;
+        touch-action: pan-x pan-y !important;
+    }
+}
+
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -615,22 +625,50 @@ if menu == "Dashboard":
 
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
 
+        .fc-toolbar-title {
+            display: none !important;
+        }
+
+        .fc-header-toolbar {
+            margin-bottom: 4px !important;
+            min-height: 0 !important;
+        }
+
         @media (max-width: 768px) {
             html, body {
-                width: 1400px !important;
-                min-width: 1400px !important;
+                width: 100% !important;
+                min-width: 100% !important;
                 overflow-x: auto !important;
+                overflow-y: auto !important;
             }
 
+            #root,
             .fc,
             .fc-view-harness,
+            .fc-view-harness-active,
+            .fc-view,
+            .fc-daygrid,
+            .fc-scroller,
+            .fc-scroller-liquid-absolute,
             .fc-scrollgrid,
+            .fc-scrollgrid-section,
+            .fc-scrollgrid-section-body,
+            .fc-scrollgrid-sync-table,
             .fc-scrollgrid table,
             .fc-col-header,
             .fc-daygrid-body,
             .fc-daygrid-body table {
                 width: 1400px !important;
                 min-width: 1400px !important;
+                max-width: none !important;
+            }
+
+            .fc-view-harness,
+            .fc-scroller,
+            .fc-scroller-liquid-absolute {
+                overflow-x: auto !important;
+                overflow-y: visible !important;
+                -webkit-overflow-scrolling: touch !important;
             }
 
             .fc-daygrid-day {
