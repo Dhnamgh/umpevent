@@ -604,7 +604,59 @@ if menu == "Dashboard":
             "handleWindowResize": False
         },
         custom_css="""
+        html, body {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
+
+        @media (max-width: 768px) {
+            html, body {
+                width: 1400px !important;
+                min-width: 1400px !important;
+                overflow-x: auto !important;
+            }
+
+            .fc,
+            .fc-view-harness,
+            .fc-scrollgrid,
+            .fc-scrollgrid table,
+            .fc-col-header,
+            .fc-daygrid-body,
+            .fc-daygrid-body table {
+                width: 1400px !important;
+                min-width: 1400px !important;
+            }
+
+            .fc-daygrid-day {
+                min-width: 190px !important;
+            }
+
+            .fc-daygrid-day-frame {
+                min-height: 135px !important;
+            }
+
+            .fc-daygrid-week:has(.fc-daygrid-event) .fc-daygrid-day-frame,
+            .fc-scrollgrid-sync-table tr:has(.fc-daygrid-event) .fc-daygrid-day-frame {
+                min-height: 190px !important;
+            }
+
+            .fc-event-title {
+                font-size: 12px !important;
+                line-height: 1.28 !important;
+            }
+
+            .fc-toolbar {
+                flex-wrap: nowrap !important;
+                gap: 8px !important;
+            }
+
+            .fc-toolbar-title {
+                font-size: 22px !important;
+                white-space: nowrap !important;
+            }
+        }
         .fc-toolbar-title { font-size: 28px !important; font-weight: 800 !important; color:#111827 !important; }
         .fc-col-header-cell-cushion, .fc-daygrid-day-number { color:#111827 !important; font-weight:800 !important; }
 
@@ -765,8 +817,7 @@ elif menu == "Cảnh báo":
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
-    st.subheader("🛠️ Thống kê hoạt động cần hỗ trợ")
-
+    
     st.markdown('<div class="table-title">Chọn kỳ thống kê hỗ trợ</div>', unsafe_allow_html=True)
     support_period = st.radio(
         "Chọn kỳ thống kê hỗ trợ",
@@ -832,7 +883,7 @@ elif menu == "Truy vấn AI":
             if len(support_df) == 0:
                 st.info("Không có thông tin cần hỗ trợ")
             else:
-                support_display = support_df.drop(columns=["Ghi chú/Giá trị gốc"], errors="ignore")
+                support_display = collapse_repeated_support_rows(support_df)
                 show_table_with_download("Danh sách sự kiện cần hỗ trợ", support_display, "danh_sach_can_ho_tro.xlsx")
 
                 chart_df = (
