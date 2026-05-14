@@ -12,9 +12,35 @@ st.set_page_config(layout="wide")
 # ================= STYLE =================
 st.markdown("""
 <style>
-html, body {font-family: Arial, sans-serif; font-size:18px; color:#111827;}
+html, body {font-family: Arial, sans-serif; font-size:20px; color:#111827;}
 section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
 .block-container {padding-top: 1rem;}
+
+/* Fixed title sizes */
+h1, h2, h3, h4, h5, h6,
+.stSubheader,
+.table-title,
+.fc-toolbar-title,
+.plotly .gtitle,
+div[data-testid="stMarkdownContainer"] h1,
+div[data-testid="stMarkdownContainer"] h2,
+div[data-testid="stMarkdownContainer"] h3,
+div[data-testid="stMarkdownContainer"] h4,
+div[data-testid="stMarkdownContainer"] h5,
+div[data-testid="stMarkdownContainer"] h6 {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+}
+
+/* Radio labels and small section headings */
+div[role="radiogroup"] label,
+div[data-baseweb="radio"] label,
+.stRadio label,
+.stRadio div {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+}
+
 
 /* Radio labels and small section headings */
 div[role="radiogroup"] label,
@@ -110,7 +136,7 @@ h3, .stSubheader, div[data-testid="stMarkdownContainer"] h3 {
 
 st.markdown("""
 <div style="
-    font-size:16px;
+    font-size:14px;
     font-weight:700;
     text-transform:uppercase;
     letter-spacing:0.4px;
@@ -817,7 +843,7 @@ elif menu == "Báo cáo":
 
         fig.update_traces(
             textposition="outside",
-            textfont=dict(size=16, color="black", family="Arial Black")
+            textfont=dict(size=14, color="black", family="Arial Black")
         )
 
         fig.update_layout(
@@ -826,8 +852,8 @@ elif menu == "Báo cáo":
             plot_bgcolor="white",
             paper_bgcolor="white",
             margin=dict(l=30, r=90, t=0, b=40),
-            xaxis=dict(title="Số sự kiện", tickfont=dict(size=16, color="black", family="Arial Black"), title_font=dict(size=17, color="black", family="Arial Black")),
-            yaxis=dict(title="", tickfont=dict(size=16, color="black", family="Arial Black"), automargin=True)
+            xaxis=dict(title="Số sự kiện", tickfont=dict(size=14, color="black", family="Arial Black"), title_font=dict(size=14, color="black", family="Arial Black")),
+            yaxis=dict(title="", tickfont=dict(size=14, color="black", family="Arial Black"), automargin=True)
         )
 
         st.plotly_chart(fig, use_container_width=True)
