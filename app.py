@@ -90,7 +90,18 @@ section[data-testid="stSidebar"] {width:255px !important; min-width:255px !impor
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Quản lý sự kiện UMP")
+st.markdown("""
+<div style="
+    font-size:16px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+    margin-bottom:10px;
+    color:#111827;
+">
+📊 QUẢN LÝ SỰ KIỆN UMP
+</div>
+""", unsafe_allow_html=True)
 
 # ================= HELPERS =================
 def parse_time(text):
@@ -498,36 +509,7 @@ df_month = df_year[df_year["start"].dt.month == today.month]
 
 # ================= DASHBOARD =================
 if menu == "Dashboard":
-    st.markdown(
-        f"""
-        <div id="calendar-title"
-             style="font-size:28px;font-weight:700;margin-bottom:12px;color:#111827;">
-             📅 Lịch toàn trường - Tháng {today.month}/{today.year}
-        </div>
 
-        <script>
-        function updateCalendarTitle() {{
-            const titleEl = window.parent.document.querySelector('.fc-toolbar-title');
-            const outputEl = window.parent.document.getElementById('calendar-title');
-
-            if (titleEl && outputEl) {{
-                let txt = titleEl.innerText || "";
-
-                // Ví dụ FullCalendar tiếng Việt: "tháng 6 năm 2026"
-                let match = txt.match(/tháng\s+(\d+)\s+năm\s+(\d+)/i);
-
-                if (match) {{
-                    outputEl.innerHTML =
-                        "📅 Lịch toàn trường - Tháng " + match[1] + "/" + match[2];
-                }}
-            }}
-        }}
-
-        setInterval(updateCalendarTitle, 500);
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
 
     events = []
 
@@ -655,17 +637,13 @@ if menu == "Dashboard":
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
 
         .fc-toolbar-title {
-            opacity: 0 !important;
-            height: 0 !important;
-            overflow: hidden !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            font-size: 1px !important;
+            font-size: 28px !important;
+            font-weight: 800 !important;
+            color:#111827 !important;
         }
 
         .fc-header-toolbar {
-            margin-bottom: 4px !important;
-            min-height: 0 !important;
+            margin-bottom: 6px !important;
         }
 
         @media (max-width: 768px) {
@@ -729,7 +707,7 @@ if menu == "Dashboard":
             }
 
             .fc-toolbar-title {
-                font-size: 22px !important;
+                font-size: 20px !important;
                 white-space: nowrap !important;
             }
         }
