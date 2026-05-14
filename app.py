@@ -705,8 +705,7 @@ if menu == "Dashboard":
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
-    st.subheader("📊 Báo cáo sự kiện theo đơn vị")
-
+    
     st.markdown('<div class="table-title">Chọn kỳ báo cáo</div>', unsafe_allow_html=True)
     report_period = st.radio(
         "Chọn kỳ báo cáo",
@@ -747,7 +746,7 @@ elif menu == "Báo cáo":
         )
 
         fig.update_layout(
-            title=dict(text=f"Số sự kiện theo đơn vị - {report_label}", font=dict(size=23, color="black", family="Arial Black")),
+            title=None,
             showlegend=False,
             plot_bgcolor="white",
             paper_bgcolor="white",
