@@ -16,6 +16,14 @@ html, body {font-family: Arial, sans-serif; font-size:16px; color:#111827;}
 section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
 .block-container {padding-top: 1rem;}
 
+h3, .stSubheader, div[data-testid="stMarkdownContainer"] h3 {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    margin-top: 0.2rem !important;
+    margin-bottom: 0.6rem !important;
+}
+
+
 .table-title {
     font-size: 22px;
     font-weight: 900;
@@ -755,7 +763,7 @@ if menu == "Dashboard":
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
-    st.subheader("📊 Báo cáo sự kiện theo đơn vị")
+    st.markdown('<div style="font-size:14px;font-weight:700;">📊 Báo cáo sự kiện theo đơn vị</div>', unsafe_allow_html=True)
 
     st.markdown(
         '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">Chọn kỳ báo cáo</div>',
@@ -826,7 +834,7 @@ elif menu == "Báo cáo":
 
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
-    st.subheader("⚠️ Trùng lịch")
+    st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
 
     df_check = df_f[(df_f["start"] >= today) & (df_f["start"] <= today + timedelta(days=30))].copy()
     found = False
@@ -920,7 +928,7 @@ elif menu == "Hỗ trợ":
 
 # ================= TRUY VẤN AI =================
 elif menu == "Truy vấn AI":
-    st.subheader("🤖 Truy vấn AI")
+    st.markdown('<div style="font-size:14px;font-weight:700;">🤖 Truy vấn AI</div>', unsafe_allow_html=True)
     q = st.text_input("Nhập câu hỏi, ví dụ: tuần, tháng, năm, hỗ trợ")
 
     if q:
@@ -970,7 +978,7 @@ elif menu == "Truy vấn AI":
 
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
-    st.subheader("📋 Sự kiện cần phê duyệt")
+    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Sự kiện cần phê duyệt</div>', unsafe_allow_html=True)
     st.info("Bảng rút gọn từ dữ liệu gốc để quản trị viên biết sự kiện cần vào hệ thống đăng ký phê duyệt.")
 
     approval_table = build_approval_summary_table(df_month)
