@@ -498,7 +498,36 @@ df_month = df_year[df_year["start"].dt.month == today.month]
 
 # ================= DASHBOARD =================
 if menu == "Dashboard":
-    st.subheader(f"📅 Lịch toàn trường - Tháng {today.month}/{today.year}")
+    st.markdown(
+        f"""
+        <div id="calendar-title"
+             style="font-size:28px;font-weight:700;margin-bottom:12px;color:#111827;">
+             📅 Lịch toàn trường - Tháng {today.month}/{today.year}
+        </div>
+
+        <script>
+        function updateCalendarTitle() {{
+            const titleEl = window.parent.document.querySelector('.fc-toolbar-title');
+            const outputEl = window.parent.document.getElementById('calendar-title');
+
+            if (titleEl && outputEl) {{
+                let txt = titleEl.innerText || "";
+
+                // Ví dụ FullCalendar tiếng Việt: "tháng 6 năm 2026"
+                let match = txt.match(/tháng\s+(\d+)\s+năm\s+(\d+)/i);
+
+                if (match) {{
+                    outputEl.innerHTML =
+                        "📅 Lịch toàn trường - Tháng " + match[1] + "/" + match[2];
+                }}
+            }}
+        }}
+
+        setInterval(updateCalendarTitle, 500);
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
 
     events = []
 
@@ -626,7 +655,12 @@ if menu == "Dashboard":
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
 
         .fc-toolbar-title {
-            display: none !important;
+            opacity: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            font-size: 1px !important;
         }
 
         .fc-header-toolbar {
