@@ -14,7 +14,21 @@ st.markdown("""
 <style>
 html, body {font-family: Arial, sans-serif; font-size:20px; color:#111827;}
 section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
+
+/* Sidebar select options */
+section[data-testid="stSidebar"] * {
+    font-size: 13px !important;
+}
+
 .block-container {padding-top: 1rem;}
+
+/* Warning box font */
+div[data-baseweb="notification"] div,
+.stAlert p {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+}
+
 
 /* Fixed title sizes */
 h1, h2, h3, h4, h5, h6,
@@ -123,11 +137,7 @@ h3, .stSubheader, div[data-testid="stMarkdownContainer"] h3 {
 }
 
 
-@media (max-width: 768px) {
-    iframe {
-        overflow-x: auto !important;
-        touch-action: pan-x pan-y !important;
-    }
+
 }
 
 
@@ -592,61 +602,16 @@ if menu == "Dashboard":
 
     st.markdown("""
     <style>
-    .calendar-mobile-scroll {
-        width: 100%;
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
-        touch-action: pan-x;
-    }
 
-    .calendar-mobile-inner {
-        min-width: 1200px;
-    }
 
     @media (max-width: 768px) {
-        .calendar-mobile-scroll {
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            padding-bottom: 6px;
-        }
 
-        .calendar-mobile-inner,
-        .calendar-mobile-inner .fc,
-        .calendar-mobile-inner .fc-view-harness,
-        .calendar-mobile-inner .fc-scrollgrid,
-        .calendar-mobile-inner table {
-            min-width: 1400px !important;
-            width: 1400px !important;
-        }
 
-        .calendar-mobile-inner .fc-daygrid-day {
-            min-width: 190px !important;
-        }
 
-        .calendar-mobile-inner .fc-daygrid-day-frame {
-            min-height: 135px !important;
-        }
 
-        .calendar-mobile-inner .fc-daygrid-week:has(.fc-daygrid-event) .fc-daygrid-day-frame,
-        .calendar-mobile-inner .fc-scrollgrid-sync-table tr:has(.fc-daygrid-event) .fc-daygrid-day-frame {
-            min-height: 190px !important;
-        }
 
-        .calendar-mobile-inner .fc-event-title {
-            font-size: 12px !important;
-            line-height: 1.28 !important;
-        }
 
-        .calendar-mobile-inner .fc-toolbar {
-            flex-wrap: nowrap !important;
-            gap: 8px !important;
-        }
 
-        .calendar-mobile-inner .fc-toolbar-title {
-            font-size: 22px !important;
-            white-space: nowrap !important;
-        }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -670,7 +635,7 @@ if menu == "Dashboard":
             "dayMaxEventRows": False,
             "eventMaxStack": 50,
             "fixedWeekCount": False,
-            "handleWindowResize": False
+            "handleWindowResize": True
         },
         custom_css="""
         html, body {
@@ -681,7 +646,7 @@ if menu == "Dashboard":
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
 
         .fc-toolbar-title {
-            font-size: 28px !important;
+            font-size: 14px !important;
             font-weight: 800 !important;
             color:#111827 !important;
         }
@@ -704,28 +669,8 @@ if menu == "Dashboard":
             .fc-view-harness-active,
             .fc-view,
             .fc-daygrid,
-            .fc-scroller,
-            .fc-scroller-liquid-absolute,
-            .fc-scrollgrid,
-            .fc-scrollgrid-section,
-            .fc-scrollgrid-section-body,
-            .fc-scrollgrid-sync-table,
-            .fc-scrollgrid table,
-            .fc-col-header,
-            .fc-daygrid-body,
-            .fc-daygrid-body table {
-                width: 1400px !important;
-                min-width: 1400px !important;
-                max-width: none !important;
-            }
 
             .fc-view-harness,
-            .fc-scroller,
-            .fc-scroller-liquid-absolute {
-                overflow-x: auto !important;
-                overflow-y: visible !important;
-                -webkit-overflow-scrolling: touch !important;
-            }
 
             .fc-daygrid-day {
                 min-width: 190px !important;
@@ -751,11 +696,12 @@ if menu == "Dashboard":
             }
 
             .fc-toolbar-title {
-                font-size: 20px !important;
+            font-size: 14px !important;
                 white-space: nowrap !important;
             }
         }
-        .fc-toolbar-title { font-size: 28px !important; font-weight: 800 !important; color:#111827 !important; }
+        .fc-toolbar-title {
+            font-size: 14px !important; font-weight: 800 !important; color:#111827 !important; }
         .fc-col-header-cell-cushion, .fc-daygrid-day-number { color:#111827 !important; font-weight:800 !important; }
 
         /* Hàng không có sự kiện co thấp lại. Hàng có sự kiện vẫn đủ cao để đọc nội dung. */
