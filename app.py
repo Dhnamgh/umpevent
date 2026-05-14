@@ -817,7 +817,8 @@ elif menu == "Cảnh báo":
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
-    
+    st.subheader("🛠️ Thống kê hoạt động cần hỗ trợ")
+
     st.markdown('<div class="table-title">Chọn kỳ thống kê hỗ trợ</div>', unsafe_allow_html=True)
     support_period = st.radio(
         "Chọn kỳ thống kê hỗ trợ",
@@ -878,7 +879,9 @@ elif menu == "Truy vấn AI":
             show_table_with_download(f"Sự kiện {label}", build_event_query_table(year_df), "su_kien_nam.xlsx")
 
         elif "hỗ trợ" in q or "ho tro" in q:
-            support_df = build_support_table(df_f)
+            # Chỉ lấy dữ liệu của năm hiện hành
+            support_year_df = df_f[df_f["start"].dt.year == today.year]
+            support_df = build_support_table(support_year_df)
 
             if len(support_df) == 0:
                 st.info("Không có thông tin cần hỗ trợ")
