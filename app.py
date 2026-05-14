@@ -865,7 +865,7 @@ elif menu == "Cảnh báo":
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
-    st.subheader("🛠️ Thống kê hoạt động cần hỗ trợ")
+    st.markdown("")
 
     st.markdown('<div class="table-title">Chọn kỳ thống kê hỗ trợ</div>', unsafe_allow_html=True)
     support_period = st.radio(
