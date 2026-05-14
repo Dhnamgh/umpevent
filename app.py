@@ -276,7 +276,9 @@ def build_approval_summary_table(df_input):
         return pd.DataFrame(columns=columns)
 
     rows = []
-    df_out = df_input.copy().sort_values("start", ascending=True).reset_index(drop=True)
+    df_out = df_input.copy()
+    df_out["_sort_time"] = pd.to_datetime(df_out["start"], errors="coerce")
+    df_out = df_out.sort_values(["_sort_time", "donvi", "event"], ascending=[True, True, True]).reset_index(drop=True)
 
     for _, r in df_out.iterrows():
         s = r.get("start")
@@ -304,14 +306,16 @@ def build_approval_summary_table(df_input):
 
 
 def build_event_query_table(df_input):
-    """Bảng rút gọn cho Truy vấn AI, chỉ giữ các cột quan trọng."""
+    """Bảng rút gọn cho Truy vấn AI, chỉ giữ các cột quan trọng và sắp xếp theo thời gian."""
     columns = ["Sự kiện", "Đơn vị", "Ngày giờ", "Địa điểm", "Hỗ trợ"]
 
     if df_input is None or len(df_input) == 0:
         return pd.DataFrame(columns=columns)
 
     rows = []
-    df_out = df_input.copy().sort_values("start", ascending=True).reset_index(drop=True)
+    df_out = df_input.copy()
+    df_out["_sort_time"] = pd.to_datetime(df_out["start"], errors="coerce")
+    df_out = df_out.sort_values(["_sort_time", "donvi", "event"], ascending=[True, True, True]).reset_index(drop=True)
 
     for _, r in df_out.iterrows():
         s = r.get("start")
@@ -886,6 +890,22 @@ elif menu == "Truy vấn AI":
             if len(support_df) == 0:
                 st.info("Không có thông tin cần hỗ trợ")
             else:
+                support_df["_sort_time"] = pd.to_datetime(
+                    support_df["Ngày giờ"],
+                    format="%d/%m/%Y %H:%M",
+                    errors="coerce"
+                )
+
+                support_df = (
+                    support_df
+                    .sort_values(
+                        ["_sort_time", "Đơn vị", "Sự kiện", "Nội dung hỗ trợ"],
+                        ascending=[True, True, True, True]
+                    )
+                    .drop(columns=["_sort_time"])
+                    .reset_index(drop=True)
+                )
+
                 support_display = collapse_repeated_support_rows(support_df)
                 show_table_with_download("Danh sách sự kiện cần hỗ trợ", support_display, "danh_sach_can_ho_tro.xlsx")
 
