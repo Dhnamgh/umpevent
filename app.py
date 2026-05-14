@@ -303,6 +303,41 @@ def build_approval_summary_table(df_input):
     return pd.DataFrame(rows, columns=columns)
 
 
+def build_event_query_table(df_input):
+    """Bảng rút gọn cho Truy vấn AI, chỉ giữ các cột quan trọng."""
+    columns = ["Sự kiện", "Đơn vị", "Ngày giờ", "Địa điểm", "Hỗ trợ"]
+
+    if df_input is None or len(df_input) == 0:
+        return pd.DataFrame(columns=columns)
+
+    rows = []
+    df_out = df_input.copy().sort_values("start", ascending=True).reset_index(drop=True)
+
+    for _, r in df_out.iterrows():
+        s = r.get("start")
+        if pd.notna(s):
+            if s.hour == 0 and s.minute == 0:
+                ngay_gio = s.strftime("%d/%m/%Y")
+            else:
+                ngay_gio = s.strftime("%d/%m/%Y %H:%M")
+        else:
+            ngay_gio = ""
+
+        ho_tro = clean_text(r.get("support", ""))
+        if not ho_tro:
+            ho_tro = "Không"
+
+        rows.append({
+            "Sự kiện": clean_text(r.get("event", "")),
+            "Đơn vị": clean_text(r.get("donvi", "")),
+            "Ngày giờ": ngay_gio,
+            "Địa điểm": clean_text(r.get("location", "")),
+            "Hỗ trợ": ho_tro
+        })
+
+    return pd.DataFrame(rows, columns=columns)
+
+
 # ================= LOAD DATA =================
 @st.cache_data
 def load_data():
@@ -431,7 +466,7 @@ today = datetime.today()
 # ================= MENU =================
 menu = st.sidebar.radio(
     "MENU",
-    ["Dashboard", "Báo cáo", "Cảnh báo", "Hỗ trợ", "Trợ giúp", "Phê duyệt", "Liên hệ"]
+    ["Dashboard", "Báo cáo", "Cảnh báo", "Hỗ trợ", "Truy vấn AI", "Phê duyệt", "Liên hệ"]
 )
 
 # ================= FILTER =================
@@ -493,6 +528,7 @@ if menu == "Dashboard":
         overflow-x: auto;
         overflow-y: hidden;
         -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
     }
 
     .calendar-mobile-inner {
@@ -500,8 +536,47 @@ if menu == "Dashboard":
     }
 
     @media (max-width: 768px) {
-        .calendar-mobile-inner {
-            min-width: 1400px;
+        .calendar-mobile-scroll {
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding-bottom: 6px;
+        }
+
+        .calendar-mobile-inner,
+        .calendar-mobile-inner .fc,
+        .calendar-mobile-inner .fc-view-harness,
+        .calendar-mobile-inner .fc-scrollgrid,
+        .calendar-mobile-inner table {
+            min-width: 1400px !important;
+            width: 1400px !important;
+        }
+
+        .calendar-mobile-inner .fc-daygrid-day {
+            min-width: 190px !important;
+        }
+
+        .calendar-mobile-inner .fc-daygrid-day-frame {
+            min-height: 135px !important;
+        }
+
+        .calendar-mobile-inner .fc-daygrid-week:has(.fc-daygrid-event) .fc-daygrid-day-frame,
+        .calendar-mobile-inner .fc-scrollgrid-sync-table tr:has(.fc-daygrid-event) .fc-daygrid-day-frame {
+            min-height: 190px !important;
+        }
+
+        .calendar-mobile-inner .fc-event-title {
+            font-size: 12px !important;
+            line-height: 1.28 !important;
+        }
+
+        .calendar-mobile-inner .fc-toolbar {
+            flex-wrap: nowrap !important;
+            gap: 8px !important;
+        }
+
+        .calendar-mobile-inner .fc-toolbar-title {
+            font-size: 22px !important;
+            white-space: nowrap !important;
         }
     }
     </style>
@@ -526,7 +601,7 @@ if menu == "Dashboard":
             "dayMaxEventRows": False,
             "eventMaxStack": 50,
             "fixedWeekCount": False,
-            "handleWindowResize": True
+            "handleWindowResize": False
         },
         custom_css="""
         .fc { font-family: Arial, sans-serif !important; color:#111827 !important; }
@@ -731,9 +806,9 @@ elif menu == "Hỗ trợ":
             f"su_kien_can_ho_tro_{support_period.lower()}.xlsx"
         )
 
-# ================= TRỢ GIÚP =================
-elif menu == "Trợ giúp":
-    st.subheader("🤖 Trợ giúp")
+# ================= TRUY VẤN AI =================
+elif menu == "Truy vấn AI":
+    st.subheader("🤖 Truy vấn AI")
     q = st.text_input("Nhập câu hỏi, ví dụ: tuần, tháng, năm, hỗ trợ")
 
     if q:
@@ -741,15 +816,15 @@ elif menu == "Trợ giúp":
 
         if "tuần" in q:
             week_df, label, _, _ = get_period_df(df_f, "Tuần")
-            show_table_with_download(f"Sự kiện {label}", week_df, "su_kien_tuan.xlsx")
+            show_table_with_download(f"Sự kiện {label}", build_event_query_table(week_df), "su_kien_tuan.xlsx")
 
         elif "tháng" in q:
             month_df, label, _, _ = get_period_df(df_f, "Tháng")
-            show_table_with_download(f"Sự kiện {label}", month_df, "su_kien_thang.xlsx")
+            show_table_with_download(f"Sự kiện {label}", build_event_query_table(month_df), "su_kien_thang.xlsx")
 
         elif "năm" in q:
             year_df, label, _, _ = get_period_df(df_f, "Năm")
-            show_table_with_download(f"Sự kiện {label}", year_df, "su_kien_nam.xlsx")
+            show_table_with_download(f"Sự kiện {label}", build_event_query_table(year_df), "su_kien_nam.xlsx")
 
         elif "hỗ trợ" in q or "ho tro" in q:
             support_df = build_support_table(df_f)
@@ -757,7 +832,8 @@ elif menu == "Trợ giúp":
             if len(support_df) == 0:
                 st.info("Không có thông tin cần hỗ trợ")
             else:
-                show_table_with_download("Danh sách sự kiện cần hỗ trợ", support_df, "danh_sach_can_ho_tro.xlsx")
+                support_display = support_df.drop(columns=["Ghi chú/Giá trị gốc"], errors="ignore")
+                show_table_with_download("Danh sách sự kiện cần hỗ trợ", support_display, "danh_sach_can_ho_tro.xlsx")
 
                 chart_df = (
                     support_df.groupby(["Sự kiện", "Nội dung hỗ trợ"], as_index=False)["Số lượng"]
