@@ -915,35 +915,6 @@ elif menu == "Truy vấn AI":
                 support_display = collapse_repeated_support_rows(support_df)
                 show_table_with_download("Danh sách sự kiện cần hỗ trợ", support_display, "danh_sach_can_ho_tro.xlsx")
 
-                chart_df = (
-                    support_df.groupby(["Sự kiện", "Nội dung hỗ trợ"], as_index=False)["Số lượng"]
-                    .sum()
-                    .sort_values("Số lượng", ascending=False)
-                )
-                chart_df["Nhãn sự kiện"] = chart_df["Sự kiện"].apply(lambda x: wrap_label(x, 28))
-
-                fig = px.bar(
-                    chart_df,
-                    x="Nhãn sự kiện",
-                    y="Số lượng",
-                    color="Nội dung hỗ trợ",
-                    text="Số lượng",
-                    barmode="group",
-                    height=max(560, 80 + 45 * chart_df["Sự kiện"].nunique())
-                )
-
-                fig.update_traces(textposition="outside", textfont=dict(size=14, color="black", family="Arial Black"))
-                fig.update_layout(
-                    title=dict(text="Thống kê sự kiện cần hỗ trợ", font=dict(size=22, color="black", family="Arial Black")),
-                    xaxis=dict(title="Sự kiện", tickangle=-15, tickfont=dict(size=13, color="black", family="Arial Black"), automargin=True),
-                    yaxis=dict(title="Số lượng", tickfont=dict(size=14, color="black")),
-                    legend=dict(title="Loại hỗ trợ", font=dict(size=13, color="black")),
-                    plot_bgcolor="white",
-                    margin=dict(l=40, r=40, t=70, b=150)
-                )
-
-                st.plotly_chart(fig, use_container_width=True)
-
         else:
             st.warning("Không hiểu yêu cầu. Hãy nhập: tuần, tháng, năm hoặc hỗ trợ")
 
