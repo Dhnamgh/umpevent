@@ -753,11 +753,11 @@ elif menu == "Báo cáo":
         )
 
         fig.update_layout(
-            title=None,
+            title=dict(text="", font=dict(size=1), x=0),
             showlegend=False,
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(l=30, r=90, t=15, b=40),
+            margin=dict(l=30, r=90, t=0, b=40),
             xaxis=dict(title="Số sự kiện", tickfont=dict(size=16, color="black", family="Arial Black"), title_font=dict(size=17, color="black", family="Arial Black")),
             yaxis=dict(title="", tickfont=dict(size=16, color="black", family="Arial Black"), automargin=True)
         )
