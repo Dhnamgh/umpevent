@@ -12,9 +12,19 @@ st.set_page_config(layout="wide")
 # ================= STYLE =================
 st.markdown("""
 <style>
-html, body {font-family: Arial, sans-serif; font-size:16px; color:#111827;}
+html, body {font-family: Arial, sans-serif; font-size:18px; color:#111827;}
 section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
 .block-container {padding-top: 1rem;}
+
+/* Radio labels and small section headings */
+div[role="radiogroup"] label,
+div[data-baseweb="radio"] label,
+.stRadio label,
+.stRadio div {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+}
+
 
 h3, .stSubheader, div[data-testid="stMarkdownContainer"] h3 {
     font-size: 14px !important;
@@ -766,7 +776,7 @@ elif menu == "Báo cáo":
     st.markdown('<div style="font-size:14px;font-weight:700;">📊 Báo cáo sự kiện theo đơn vị</div>', unsafe_allow_html=True)
 
     st.markdown(
-        '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">Chọn kỳ báo cáo</div>',
+        '<div style="font-size:14px;font-weight:700;margin-bottom:6px;">Chọn kỳ báo cáo</div>',
         unsafe_allow_html=True
     )
     report_period = st.radio(
@@ -779,7 +789,7 @@ elif menu == "Báo cáo":
 
     df_report, report_label, _, _ = get_period_df(df_f, report_period)
     st.markdown(
-        f'<div style="font-size:13px;font-weight:700;margin-top:8px;">Báo cáo: {report_label}</div>',
+        f'<div style="font-size:14px;font-weight:700;margin-top:8px;">Báo cáo: {report_label}</div>',
         unsafe_allow_html=True
     )
 
