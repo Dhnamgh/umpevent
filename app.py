@@ -705,8 +705,12 @@ if menu == "Dashboard":
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
-    
-    st.markdown('<div class="table-title">Chọn kỳ báo cáo</div>', unsafe_allow_html=True)
+    st.subheader("📊 Báo cáo sự kiện theo đơn vị")
+
+    st.markdown(
+        '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">Chọn kỳ báo cáo</div>',
+        unsafe_allow_html=True
+    )
     report_period = st.radio(
         "Chọn kỳ báo cáo",
         ["Tuần", "Tháng", "Năm"],
@@ -716,7 +720,10 @@ elif menu == "Báo cáo":
     )
 
     df_report, report_label, _, _ = get_period_df(df_f, report_period)
-    st.markdown(f'<div class="table-title">Báo cáo: {report_label}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-size:13px;font-weight:700;margin-top:8px;">Báo cáo: {report_label}</div>',
+        unsafe_allow_html=True
+    )
 
     if len(df_report) == 0:
         st.info(f"Không có sự kiện trong {report_label.lower()}")
@@ -750,7 +757,7 @@ elif menu == "Báo cáo":
             showlegend=False,
             plot_bgcolor="white",
             paper_bgcolor="white",
-            margin=dict(l=30, r=90, t=80, b=40),
+            margin=dict(l=30, r=90, t=15, b=40),
             xaxis=dict(title="Số sự kiện", tickfont=dict(size=16, color="black", family="Arial Black"), title_font=dict(size=17, color="black", family="Arial Black")),
             yaxis=dict(title="", tickfont=dict(size=16, color="black", family="Arial Black"), automargin=True)
         )
