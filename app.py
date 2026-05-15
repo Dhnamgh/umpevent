@@ -14,6 +14,28 @@ st.set_page_config(layout="wide")
 # ================= STYLE =================
 st.markdown("""
 <style>
+
+/* ===== Sidebar menu buttons ===== */
+section[data-testid="stSidebar"] div[role="radiogroup"] label {
+    background: #0f5c99 !important;
+    color: white !important;
+    border-radius: 8px !important;
+    padding: 8px 10px !important;
+    margin: 4px 0 !important;
+    font-weight: 700 !important;
+    border: 1px solid #0b4a7a !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15) !important;
+}
+
+section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+    background: #0b4a7a !important;
+}
+
+section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+    background: #073b63 !important;
+    border-left: 5px solid #facc15 !important;
+}
+
 html, body {font-family: Arial, sans-serif; font-size:20px; color:#111827;}
 section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
 
@@ -375,6 +397,14 @@ def post_to_gsheet(payload):
     return data
 
 
+
+def show_webhook_config_error():
+    st.error("Chưa cấu hình Apps Script Web App URL nên app chưa ghi/cập nhật được Google Sheet.")
+    st.code("""
+[gsheet]
+webhook_url = "DÁN_APPS_SCRIPT_WEB_APP_URL_VÀO_ĐÂY"
+""", language="toml")
+
 def build_approval_summary_table(df_input):
     """Bảng phê duyệt rút gọn lấy trực tiếp từ dữ liệu Google Sheet."""
     columns = ["Id", "Sự kiện", "Đơn vị", "Ngày giờ", "Địa điểm", "Hỗ trợ", "Ý kiến"]
@@ -654,6 +684,16 @@ def build_support_table(df_input):
 df = load_data()
 today = datetime.today()
 
+
+# ================= FORM DEFAULTS =================
+if "reg_start_date" not in st.session_state:
+    st.session_state.reg_start_date = today.date()
+if "reg_end_date" not in st.session_state:
+    st.session_state.reg_end_date = today.date()
+
+def sync_registration_end_date():
+    st.session_state.reg_end_date = st.session_state.reg_start_date
+
 # ================= MENU =================
 menu = st.sidebar.radio(
     "MENU",
@@ -683,10 +723,23 @@ if menu == "Đăng ký":
         with c1:
             event_name = st.text_input("Tên sự kiện")
             donvi = st.text_input("Đơn vị phụ trách/tổ chức")
-            start_date = st.date_input("Ngày tổ chức")
-            start_time = st.time_input("Giờ bắt đầu")
-            end_date = st.date_input("Ngày kết thúc")
-            end_time = st.time_input("Giờ kết thúc")
+            start_date = st.date_input(
+                "Ngày tổ chức",
+                key="reg_start_date",
+                on_change=sync_registration_end_date
+            )
+            start_time = st.time_input(
+                "Giờ bắt đầu",
+                value=datetime.strptime("07:30", "%H:%M").time()
+            )
+            end_date = st.date_input(
+                "Ngày kết thúc",
+                key="reg_end_date"
+            )
+            end_time = st.time_input(
+                "Giờ kết thúc",
+                value=datetime.strptime("13:30", "%H:%M").time()
+            )
         with c2:
             location = st.text_input("Địa điểm tổ chức")
             nguoi_phu_trach = st.text_input("Người phụ trách")
@@ -758,7 +811,10 @@ if menu == "Đăng ký":
                 post_to_gsheet(payload)
                 st.success("Đã gửi đăng ký và ghi vào Google Sheet.")
             except Exception as e:
-                st.error(f"Không gửi được đăng ký: {e}")
+                if "webhook_url" in str(e):
+                    show_webhook_config_error()
+                else:
+                    st.error(f"Không gửi được đăng ký: {e}")
 
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
@@ -1165,7 +1221,10 @@ elif menu == "Phê duyệt":
     if "approval_opinion" not in approval_df.columns:
         approval_df["approval_opinion"] = ""
 
-    pending_df = approval_df[approval_df["approval_opinion"].fillna("").astype(str).str.strip() == ""].copy()
+    pending_df = approval_df[
+        (approval_df["start"].dt.year == today.year)
+        & (approval_df["approval_opinion"].fillna("").astype(str).str.strip() == "")
+    ].copy()
     pending_df = pending_df.sort_values("start", ascending=True)
 
     if len(pending_df) == 0:
@@ -1219,7 +1278,10 @@ elif menu == "Phê duyệt":
                     st.success("Đã cập nhật phê duyệt vào Google Sheet.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Không cập nhật được phê duyệt: {e}")
+                    if "webhook_url" in str(e):
+                        show_webhook_config_error()
+                    else:
+                        st.error(f"Không cập nhật được phê duyệt: {e}")
 
 
 # ================= LIÊN HỆ =================
