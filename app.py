@@ -436,18 +436,38 @@ def save_pending_local(payload):
     _write_local_pending(rows)
     return {"ok": True, "local_pending": True}
 
+
+def safe_error_message(err):
+    """Không hiển thị URL bí mật/webhook trong giao diện app."""
+    msg = str(err)
+    msg = re.sub(r"https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec", "[WEBHOOK_URL_ẨN]", msg)
+    msg = re.sub(r"https://script\.google\.com/macros/s/[^\\s\\)\\]]+", "[WEBHOOK_URL_ẨN]", msg)
+    msg = re.sub(r"https://docs\.google\.com/spreadsheets/d/[^\\s\\)\\]]+", "[GOOGLE_SHEET_URL_ẨN]", msg)
+    return msg
+
 def post_to_gsheet(payload):
     url = get_gsheet_webhook_url()
     if not url:
         return save_pending_local(payload)
 
-    response = requests.post(url, json=payload, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+    except Exception as e:
+        raise RuntimeError("Không kết nối được Apps Script Web App. Vui lòng kiểm tra webhook_url trong secrets.toml.") from e
+
+    if response.status_code == 403:
+        raise RuntimeError(
+            "Apps Script Web App đang từ chối truy cập (403). Kiểm tra Deploy Web app: "
+            "Execute as = Me, Who has access = Anyone, sau đó Deploy lại và copy URL /exec mới."
+        )
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"Apps Script Web App trả về lỗi HTTP {response.status_code}.")
 
     try:
         data = response.json()
     except Exception:
-        data = {"ok": False, "message": response.text}
+        data = {"ok": False, "message": "Apps Script không trả về JSON hợp lệ."}
 
     if not data.get("ok", False):
         raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
@@ -881,7 +901,7 @@ if menu == "Đăng ký":
                 if "webhook_url" in str(e):
                     show_webhook_config_error()
                 else:
-                    st.error(f"Không gửi được đăng ký: {e}")
+                    st.error(f"Không gửi được đăng ký: {safe_error_message(e)}")
 
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
@@ -1351,7 +1371,7 @@ elif menu == "Phê duyệt":
                     if "webhook_url" in str(e):
                         show_webhook_config_error()
                     else:
-                        st.error(f"Không cập nhật được phê duyệt: {e}")
+                        st.error(f"Không cập nhật được phê duyệt: {safe_error_message(e)}")
 
 
 # ================= LIÊN HỆ =================
