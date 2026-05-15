@@ -6,7 +6,6 @@ import plotly.express as px
 import re
 import hashlib
 import json
-import uuid
 import requests
 from io import BytesIO
 from pathlib import Path
@@ -519,11 +518,8 @@ def build_registration_payload(
     nguoi_phu_trach, nguoi_dang_ky, email, support_flag,
     support_values
 ):
-    item_id = str(uuid.uuid4())
-
     payload = {
         "action": "create",
-        "Id": item_id,
         "Thời gian bắt đầu": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "Thời gian hoàn thành": "",
         "Tên sự kiện": event_name,
@@ -619,7 +615,7 @@ def build_event_query_table(df_input):
 
 
 # ================= LOAD DATA =================
-@st.cache_data
+@st.cache_data(ttl=30)
 def load_data():
     df = pd.read_csv(st.secrets["data"]["csv_url"])
     df.columns = df.columns.str.strip()
@@ -1304,18 +1300,26 @@ elif menu == "Truy vấn AI":
 elif menu == "Phê duyệt":
     st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
 
+    if st.button("🔄 Làm mới dữ liệu Google Sheet"):
+        st.cache_data.clear()
+        st.rerun()
+
     approval_df = df_f.copy()
     if "approval_opinion" not in approval_df.columns:
         approval_df["approval_opinion"] = ""
 
+    approval_df["approval_opinion"] = approval_df["approval_opinion"].fillna("").astype(str).str.strip()
+    approval_df["approval_opinion"] = approval_df["approval_opinion"].replace(["nan", "None", "NaN"], "")
+
     pending_df = approval_df[
         (approval_df["start"].dt.year == today.year)
-        & (approval_df["approval_opinion"].fillna("").astype(str).str.strip() == "")
+        & (approval_df["approval_opinion"] == "")
     ].copy()
     pending_df = pending_df.sort_values("start", ascending=True)
 
     if len(pending_df) == 0:
         st.success("Không có sự kiện đang chờ phê duyệt.")
+        st.caption("Nếu vừa đăng ký sự kiện mới, bấm nút Làm mới dữ liệu Google Sheet ở trên hoặc đợi vài chục giây để Google Sheet cập nhật CSV.")
     else:
         display_df = build_approval_summary_table(pending_df)
         show_table_with_download(
