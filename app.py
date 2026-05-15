@@ -5,9 +5,11 @@ from streamlit_calendar import calendar
 import plotly.express as px
 import re
 import hashlib
+import json
 import uuid
 import requests
 from io import BytesIO
+from pathlib import Path
 
 st.set_page_config(layout="wide")
 
@@ -15,16 +17,27 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 
-/* ===== Sidebar menu buttons ===== */
+/* ===== Sidebar menu buttons - clean equal buttons ===== */
+section[data-testid="stSidebar"] div[role="radiogroup"] {
+    gap: 8px !important;
+}
+
 section[data-testid="stSidebar"] div[role="radiogroup"] label {
+    width: 150px !important;
+    min-width: 150px !important;
+    max-width: 150px !important;
+    min-height: 38px !important;
     background: #0f5c99 !important;
-    color: white !important;
+    color: #ffffff !important;
     border-radius: 8px !important;
-    padding: 8px 10px !important;
+    padding: 8px 12px !important;
     margin: 4px 0 !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     border: 1px solid #0b4a7a !important;
     box-shadow: 0 1px 2px rgba(0,0,0,0.15) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
 }
 
 section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
@@ -35,6 +48,20 @@ section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)
     background: #073b63 !important;
     border-left: 5px solid #facc15 !important;
 }
+
+section[data-testid="stSidebar"] div[role="radiogroup"] label div:first-child,
+section[data-testid="stSidebar"] div[role="radiogroup"] label input {
+    display: none !important;
+}
+
+section[data-testid="stSidebar"] div[role="radiogroup"] label p,
+section[data-testid="stSidebar"] div[role="radiogroup"] label span,
+section[data-testid="stSidebar"] div[role="radiogroup"] label div {
+    color: #ffffff !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+}
+
 
 html, body {font-family: Arial, sans-serif; font-size:20px; color:#111827;}
 section[data-testid="stSidebar"] {width:255px !important; min-width:255px !important; max-width:255px !important;}
@@ -376,10 +403,44 @@ def get_gsheet_webhook_url():
         return ""
 
 
+
+LOCAL_PENDING_PATH = Path("ump_events_local_pending.json")
+
+def _read_local_pending():
+    if not LOCAL_PENDING_PATH.exists():
+        return []
+    try:
+        return json.loads(LOCAL_PENDING_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+def _write_local_pending(rows):
+    LOCAL_PENDING_PATH.write_text(
+        json.dumps(rows, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8"
+    )
+
+def save_pending_local(payload):
+    rows = _read_local_pending()
+    action = payload.get("action", "create")
+    if action == "create":
+        rows.append(payload)
+    elif action == "approve":
+        found = False
+        for row in rows:
+            if str(row.get("Id", "")).strip() == str(payload.get("Id", "")).strip():
+                row.update(payload)
+                found = True
+                break
+        if not found:
+            rows.append(payload)
+    _write_local_pending(rows)
+    return {"ok": True, "local_pending": True}
+
 def post_to_gsheet(payload):
     url = get_gsheet_webhook_url()
     if not url:
-        raise RuntimeError("Chưa cấu hình [gsheet].webhook_url trong secrets.toml")
+        return save_pending_local(payload)
 
     response = requests.post(url, json=payload, timeout=30)
     response.raise_for_status()
@@ -685,14 +746,14 @@ df = load_data()
 today = datetime.today()
 
 
+
 # ================= FORM DEFAULTS =================
 if "reg_start_date" not in st.session_state:
     st.session_state.reg_start_date = today.date()
 if "reg_end_date" not in st.session_state:
     st.session_state.reg_end_date = today.date()
-
-def sync_registration_end_date():
-    st.session_state.reg_end_date = st.session_state.reg_start_date
+if "reg_prev_start_date" not in st.session_state:
+    st.session_state.reg_prev_start_date = st.session_state.reg_start_date
 
 # ================= MENU =================
 menu = st.sidebar.radio(
@@ -718,28 +779,32 @@ if menu == "Đăng ký":
     st.markdown('<div style="font-size:14px;font-weight:700;">📝 Đăng ký sự kiện</div>', unsafe_allow_html=True)
     st.info("Dữ liệu đăng ký tạm thời được ghi vào Google Sheet hiện app đang đọc. Sau này lên server trường có thể đổi sang SharePoint List.")
 
+    # Ngày/giờ đặt ngoài form để ngày kết thúc tự đổi theo ngày tổ chức khi người dùng chọn.
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        start_date = st.date_input("Ngày tổ chức", key="reg_start_date")
+        start_time = st.time_input(
+            "Giờ bắt đầu",
+            value=datetime.strptime("07:30", "%H:%M").time()
+        )
+    with dc2:
+        if st.session_state.reg_start_date != st.session_state.reg_prev_start_date:
+            st.session_state.reg_end_date = st.session_state.reg_start_date
+            st.session_state.reg_prev_start_date = st.session_state.reg_start_date
+
+        end_date = st.date_input("Ngày kết thúc", key="reg_end_date")
+        end_time = st.time_input(
+            "Giờ kết thúc",
+            value=datetime.strptime("13:30", "%H:%M").time()
+        )
+
     with st.form("registration_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
             event_name = st.text_input("Tên sự kiện")
             donvi = st.text_input("Đơn vị phụ trách/tổ chức")
-            start_date = st.date_input(
-                "Ngày tổ chức",
-                key="reg_start_date",
-                on_change=sync_registration_end_date
-            )
-            start_time = st.time_input(
-                "Giờ bắt đầu",
-                value=datetime.strptime("07:30", "%H:%M").time()
-            )
-            end_date = st.date_input(
-                "Ngày kết thúc",
-                key="reg_end_date"
-            )
-            end_time = st.time_input(
-                "Giờ kết thúc",
-                value=datetime.strptime("13:30", "%H:%M").time()
-            )
+            st.caption(f"Ngày giờ tổ chức: {start_date.strftime('%d/%m/%Y')} {start_time.strftime('%H:%M')}")
+            st.caption(f"Ngày giờ kết thúc: {end_date.strftime('%d/%m/%Y')} {end_time.strftime('%H:%M')}")
         with c2:
             location = st.text_input("Địa điểm tổ chức")
             nguoi_phu_trach = st.text_input("Người phụ trách")
@@ -808,8 +873,11 @@ if menu == "Đăng ký":
             )
 
             try:
-                post_to_gsheet(payload)
-                st.success("Đã gửi đăng ký và ghi vào Google Sheet.")
+                result = post_to_gsheet(payload)
+                if result.get("local_pending"):
+                    st.warning("Chưa cấu hình Apps Script Web App URL nên dữ liệu đang được lưu tạm vào file ump_events_local_pending.json trên server.")
+                else:
+                    st.success("Đã gửi đăng ký và ghi vào Google Sheet.")
             except Exception as e:
                 if "webhook_url" in str(e):
                     show_webhook_config_error()
@@ -1274,8 +1342,11 @@ elif menu == "Phê duyệt":
                     "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)": approval_text,
                 }
                 try:
-                    post_to_gsheet(payload)
-                    st.success("Đã cập nhật phê duyệt vào Google Sheet.")
+                    result = post_to_gsheet(payload)
+                    if result.get("local_pending"):
+                        st.warning("Chưa cấu hình Apps Script Web App URL nên phê duyệt đang được lưu tạm vào file ump_events_local_pending.json trên server.")
+                    else:
+                        st.success("Đã cập nhật phê duyệt vào Google Sheet.")
                     st.rerun()
                 except Exception as e:
                     if "webhook_url" in str(e):
