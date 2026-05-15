@@ -23,43 +23,42 @@ section[data-testid="stSidebar"] div[role="radiogroup"] {
 }
 
 section[data-testid="stSidebar"] div[role="radiogroup"] label {
-    width: 150px !important;
-    min-width: 150px !important;
-    max-width: 150px !important;
-    min-height: 38px !important;
+    width: 170px !important;
+    min-width: 170px !important;
+    max-width: 170px !important;
+    min-height: 42px !important;
     background: #0f5c99 !important;
-    color: #ffffff !important;
     border-radius: 8px !important;
-    padding: 8px 12px !important;
-    margin: 4px 0 !important;
-    font-weight: 800 !important;
+    padding: 10px 14px !important;
+    margin: 5px 0 !important;
     border: 1px solid #0b4a7a !important;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.15) !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.18) !important;
     display: flex !important;
     align-items: center !important;
-    justify-content: flex-start !important;
 }
 
 section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
     background: #0b4a7a !important;
 }
 
-section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+section[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
     background: #073b63 !important;
     border-left: 5px solid #facc15 !important;
 }
 
-section[data-testid="stSidebar"] div[role="radiogroup"] label div:first-child,
-section[data-testid="stSidebar"] div[role="radiogroup"] label input {
+/* Ẩn nút radio tròn */
+section[data-testid="stSidebar"] div[role="radiogroup"] input[type="radio"] {
     display: none !important;
 }
 
-section[data-testid="stSidebar"] div[role="radiogroup"] label p,
-section[data-testid="stSidebar"] div[role="radiogroup"] label span,
-section[data-testid="stSidebar"] div[role="radiogroup"] label div {
+/* Chữ menu */
+section[data-testid="stSidebar"] div[role="radiogroup"] label p {
     color: #ffffff !important;
-    font-size: 13px !important;
-    font-weight: 800 !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
 }
 
 
@@ -875,7 +874,7 @@ if menu == "Đăng ký":
             try:
                 result = post_to_gsheet(payload)
                 if result.get("local_pending"):
-                    st.warning("Chưa cấu hình Apps Script Web App URL nên dữ liệu đang được lưu tạm vào file ump_events_local_pending.json trên server.")
+                    st.info("Chưa cấu hình Apps Script Web App URL. Dữ liệu đăng ký đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                 else:
                     st.success("Đã gửi đăng ký và ghi vào Google Sheet.")
             except Exception as e:
@@ -1344,7 +1343,7 @@ elif menu == "Phê duyệt":
                 try:
                     result = post_to_gsheet(payload)
                     if result.get("local_pending"):
-                        st.warning("Chưa cấu hình Apps Script Web App URL nên phê duyệt đang được lưu tạm vào file ump_events_local_pending.json trên server.")
+                        st.info("Chưa cấu hình Apps Script Web App URL. Phê duyệt đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                     else:
                         st.success("Đã cập nhật phê duyệt vào Google Sheet.")
                     st.rerun()
