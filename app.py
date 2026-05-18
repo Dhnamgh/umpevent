@@ -883,7 +883,26 @@ def load_data_no_cache():
     return df_raw
 
 
+
+
+
+
+def normalize_approval_text(value):
+    txt = clean_text(value)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    if txt.lower() in ["nan", "none", "nat"]:
+        return ""
+    return txt
+
 def approval_text_from_row(row):
+    # Ưu tiên dò mọi cột có cả "Ý kiến" và "Phòng Hành chính Tổng hợp"
+    for c in row.index:
+        c_norm = re.sub(r"\s+", " ", str(c)).strip()
+        if ("Ý kiến" in c_norm and "Phòng Hành chính Tổng hợp" in c_norm) or c == "approval_opinion":
+            val = normalize_approval_text(row.get(c, ""))
+            if val:
+                return val
+
     candidates = [
         "approval_opinion",
         "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
@@ -892,7 +911,7 @@ def approval_text_from_row(row):
     ]
     for c in candidates:
         if c in row.index:
-            return clean_text(row.get(c, ""))
+            return normalize_approval_text(row.get(c, ""))
     return ""
 
 def filter_calendar_approved(df_input):
@@ -909,7 +928,6 @@ def filter_pending_approval_events(df_input, current_year):
         return df_input
     df_out = df_input.copy()
     approvals = df_out.apply(approval_text_from_row, axis=1)
-    approvals = approvals.replace(["nan", "None", "NaN"], "")
     return df_out[
         (df_out["start"].dt.year == current_year)
         & (approvals == "")
@@ -1048,6 +1066,8 @@ if menu == "Đăng ký":
             value=datetime.strptime("13:30", "%H:%M").time()
         )
 
+    support_flag = st.selectbox("Có yêu cầu hỗ trợ?", ["KHÔNG", "CÓ"], key="reg_support_flag")
+
     with st.form("registration_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -1060,7 +1080,7 @@ if menu == "Đăng ký":
             nguoi_phu_trach = st.text_input("Người phụ trách")
             nguoi_dang_ky = st.text_input("Người đăng ký")
             email = st.text_input("Email")
-            support_flag = st.selectbox("Có yêu cầu hỗ trợ?", ["KHÔNG", "CÓ"])
+            st.caption(f"Có yêu cầu hỗ trợ: {support_flag}")
 
         support_ban_don_tiep = 0
         support_khan_ban = "KHÔNG"
@@ -1164,7 +1184,7 @@ elif menu == "Dashboard":
     try:
         fresh_dashboard_df = load_data_no_cache()
         fresh_dashboard_df = fresh_dashboard_df if "Toàn trường" in selected else fresh_dashboard_df[fresh_dashboard_df["donvi"].isin(selected)]
-        df_f = fresh_dashboard_df.copy()
+        df_f = filter_calendar_approved(fresh_dashboard_df.copy())
     except Exception:
         pass
 
@@ -1579,13 +1599,13 @@ elif menu == "Truy vấn AI":
 
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
+    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
+
     if not enforce_menu_access(menu):
         st.stop()
 
-    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
-
-    if not require_admin_login():
-        st.stop()
+    if st.session_state.get("approval_success_message"):
+        st.success(st.session_state.pop("approval_success_message"))
 
     if st.button("Đăng xuất quản trị"):
         st.session_state.admin_logged_in = False
