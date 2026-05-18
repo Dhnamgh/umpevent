@@ -951,17 +951,49 @@ password = "MAT_KHAU_QUAN_TRI"
     return False
 
 
+
+
+def get_approval_series(df_input):
+    """Lấy cột phê duyệt từ dữ liệu đã chuẩn hóa hoặc từ tên cột gốc Google Sheet."""
+    if df_input is None or len(df_input) == 0:
+        return pd.Series([], dtype=str)
+
+    candidates = [
+        "approval_opinion",
+        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
+        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
+        "Ý kiến của Phòng Hành chính Tổng hợp",
+    ]
+
+    for col in candidates:
+        if col in df_input.columns:
+            return df_input[col].fillna("").astype(str).str.strip()
+
+    return pd.Series([""] * len(df_input), index=df_input.index, dtype=str)
+
+
 def filter_approved_events(df_input):
-    """Chỉ hiển thị sự kiện đã được phê duyệt là Thống nhất."""
+    """Chỉ giữ sự kiện đã được phê duyệt là Thống nhất."""
     if df_input is None or len(df_input) == 0:
         return df_input
 
     df_out = df_input.copy()
-    if "approval_opinion" not in df_out.columns:
-        df_out["approval_opinion"] = ""
+    approval = get_approval_series(df_out)
+    return df_out[approval.eq("Thống nhất") | approval.str.startswith("Thống nhất:")].copy()
 
-    approval = df_out["approval_opinion"].fillna("").astype(str).str.strip()
-    return df_out[approval.str.startswith("Thống nhất")].copy()
+
+def filter_pending_approval_events(df_input, current_year):
+    """Chỉ giữ sự kiện trong năm hiện hành và chưa có ý kiến phê duyệt."""
+    if df_input is None or len(df_input) == 0:
+        return df_input
+
+    df_out = df_input.copy()
+    approval = get_approval_series(df_out)
+
+    return df_out[
+        (df_out["start"].dt.year == current_year)
+        & (approval == "")
+    ].copy()
 
 # ================= ĐĂNG KÝ =================
 if menu == "Đăng ký":
@@ -1086,9 +1118,7 @@ elif menu == "Dashboard":
         df_f = fresh_dashboard_df.copy()
     except Exception:
         pass
-
-
-    # Lịch chỉ hiển thị các sự kiện đã được phê duyệt "Thống nhất".
+    # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
     df_f = filter_approved_events(df_f)
 
     events = []
@@ -1271,6 +1301,7 @@ elif menu == "Dashboard":
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
+    df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">📊 Báo cáo sự kiện theo đơn vị</div>', unsafe_allow_html=True)
 
     st.markdown(
@@ -1342,6 +1373,7 @@ elif menu == "Báo cáo":
 
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
+    df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
 
     df_check = df_f[(df_f["start"] >= today) & (df_f["start"] <= today + timedelta(days=30))].copy()
@@ -1393,6 +1425,7 @@ elif menu == "Cảnh báo":
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
+    df_f = filter_approved_events(df_f)
     st.markdown("")
 
     st.markdown('<div class="table-title">Chọn kỳ thống kê hỗ trợ</div>', unsafe_allow_html=True)
@@ -1436,6 +1469,7 @@ elif menu == "Hỗ trợ":
 
 # ================= TRUY VẤN AI =================
 elif menu == "Truy vấn AI":
+    df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">🤖 Truy vấn AI</div>', unsafe_allow_html=True)
     q = st.text_input("Nhập câu hỏi, ví dụ: tuần, tháng, năm, hỗ trợ")
 
@@ -1510,13 +1544,7 @@ elif menu == "Phê duyệt":
     if "approval_opinion" not in approval_df.columns:
         approval_df["approval_opinion"] = ""
 
-    approval_df["approval_opinion"] = approval_df["approval_opinion"].fillna("").astype(str).str.strip()
-    approval_df["approval_opinion"] = approval_df["approval_opinion"].replace(["nan", "None", "NaN"], "")
-
-    pending_df = approval_df[
-        (approval_df["start"].dt.year == today.year)
-        & (approval_df["approval_opinion"] == "")
-    ].copy()
+    pending_df = filter_pending_approval_events(approval_df, today.year)
     pending_df = pending_df.sort_values("start", ascending=True)
 
     if len(pending_df) == 0:
