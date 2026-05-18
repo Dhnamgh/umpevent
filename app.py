@@ -662,8 +662,8 @@ def load_data():
         "Ý kiến của Phòng Hành chính Tổng hợp": "approval_opinion"
     })
 
-    df["start"] = pd.to_datetime(df["start"], errors="coerce")
-    df["end"] = pd.to_datetime(df["end"], errors="coerce")
+    df["start"] = df["start"].apply(parse_event_date)
+    df["end"] = df["end"].apply(parse_event_date)
     df["end"] = df["end"].fillna(df["start"])
 
     df = df.dropna(subset=["start"])
@@ -755,6 +755,79 @@ def build_support_table(df_input):
 
     return pd.DataFrame(rows)
 
+
+
+def load_data_no_cache():
+    """Đọc trực tiếp Google Sheet CSV, không dùng cache, dùng riêng cho menu Phê duyệt."""
+    df_raw = pd.read_csv(st.secrets["data"]["csv_url"])
+    df_raw.columns = df_raw.columns.str.strip()
+
+    df_raw = df_raw.rename(columns={
+        "Tên sự kiện": "event",
+        "Đơn vị phụ trách/ tổ chức": "donvi",
+        "Ngày tổ chức": "start",
+        "Ngày kết thúc": "end",
+        "Địa điểm tổ chức": "location",
+        "Hỗ trợ": "support",
+        "Một số ĐỀ XUẤT HỖ TRỢ từ phòng Hành chính Tổng hợp": "support",
+        "Giờ bắt đầu": "start_time",
+        "Giờ kết thúc": "end_time",
+        "Số lượng bàn đón tiếp": "support_ban_don_tiep",
+        "Cần trải khăn bàn hội trường": "support_khan_ban",
+        "Số lượng lễ tân": "support_le_tan",
+        "Số lượng bảng tên (bảng mica)": "support_bang_ten",
+        "Số lượng bìa ký kết": "support_bia_ky_ket",
+        "Số lượng nước uống": "support_nuoc_uong",
+        "Số phần Teabreak": "support_teabreak",
+        "Số lượng hoa để bàn": "support_hoa_ban",
+        "Số lượng hoa để bục phát biểu": "support_hoa_buc",
+        "Số lượng hoa bó để tặng": "support_hoa_tang",
+        "Số lượng quà tặng": "support_qua_tang",
+        "Số lượng Brochure": "support_brochure",
+        "Số lượng khay bưng": "support_khay_bung",
+        "Số lượng bandroll, standee cần in và thi công": "support_bandroll_standee",
+        "Số lượng Backdrop cần in và thi công": "support_backdrop",
+        "Cần chạy bảng điện tử": "support_bang_dien_tu",
+        "Cần gửi thư mời": "support_thu_moi",
+        "Các yêu cầu khác (nếu có)": "support_khac",
+        "Id": "item_id",
+        "ID": "item_id",
+        "Thời gian bắt đầu": "submitted_at",
+        "Thời gian hoàn thành": "completed_at",
+        "Người phụ trách": "nguoi_phu_trach",
+        "Người phụ trách sự kiện": "nguoi_phu_trach",
+        "Người đăng ký": "nguoi_dang_ky",
+        "Người đăng kí": "nguoi_dang_ky",
+        "Email": "email",
+        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)": "approval_opinion",
+        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)": "approval_opinion",
+        "Ý kiến của Phòng Hành chính Tổng hợp": "approval_opinion"
+    })
+
+    df_raw["start"] = df_raw["start"].apply(parse_event_date)
+    df_raw["end"] = df_raw["end"].apply(parse_event_date)
+    df_raw["end"] = df_raw["end"].fillna(df_raw["start"])
+
+    df_raw = df_raw.dropna(subset=["start"])
+
+    for i in df_raw.index:
+        t = parse_time(df_raw.at[i, "start_time"] if "start_time" in df_raw.columns else None)
+        if t and pd.notna(df_raw.at[i, "start"]):
+            df_raw.at[i, "start"] = df_raw.at[i, "start"].replace(hour=t[0], minute=t[1])
+
+        t2 = parse_time(df_raw.at[i, "end_time"] if "end_time" in df_raw.columns else None)
+        if t2 and pd.notna(df_raw.at[i, "end"]):
+            df_raw.at[i, "end"] = df_raw.at[i, "end"].replace(hour=t2[0], minute=t2[1])
+
+    for col in [
+        "item_id", "event", "donvi", "location", "support",
+        "approval_opinion", "submitted_at", "completed_at"
+    ]:
+        if col not in df_raw.columns:
+            df_raw[col] = ""
+        df_raw[col] = df_raw[col].apply(clean_text)
+
+    return df_raw
 
 # ================= DATA =================
 df = load_data()
@@ -892,7 +965,8 @@ if menu == "Đăng ký":
                 if result.get("local_pending"):
                     st.info("Chưa cấu hình Apps Script Web App URL. Dữ liệu đăng ký đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                 else:
-                    st.success("Đã gửi đăng ký và ghi vào Google Sheet.")
+                    st.cache_data.clear()
+                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Vào Dashboard và bấm Làm mới dữ liệu lịch nếu chưa thấy ngay.")
             except Exception as e:
                 if "webhook_url" in str(e):
                     show_webhook_config_error()
@@ -901,6 +975,16 @@ if menu == "Đăng ký":
 
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
+    if st.button("🔄 Làm mới dữ liệu lịch"):
+        st.cache_data.clear()
+        st.rerun()
+
+    try:
+        fresh_dashboard_df = load_data_no_cache()
+        fresh_dashboard_df = fresh_dashboard_df if "Toàn trường" in selected else fresh_dashboard_df[fresh_dashboard_df["donvi"].isin(selected)]
+        df_f = fresh_dashboard_df.copy()
+    except Exception:
+        pass
 
 
     events = []
@@ -1304,7 +1388,14 @@ elif menu == "Phê duyệt":
         st.cache_data.clear()
         st.rerun()
 
-    approval_df = df_f.copy()
+    try:
+        approval_source_df = load_data_no_cache()
+        approval_source_df = approval_source_df if "Toàn trường" in selected else approval_source_df[approval_source_df["donvi"].isin(selected)]
+    except Exception as e:
+        st.warning(f"Không đọc trực tiếp được Google Sheet CSV, dùng dữ liệu cache hiện tại. Lỗi: {safe_error_message(e)}")
+        approval_source_df = df_f.copy()
+
+    approval_df = approval_source_df.copy()
     if "approval_opinion" not in approval_df.columns:
         approval_df["approval_opinion"] = ""
 
@@ -1319,7 +1410,8 @@ elif menu == "Phê duyệt":
 
     if len(pending_df) == 0:
         st.success("Không có sự kiện đang chờ phê duyệt.")
-        st.caption("Nếu vừa đăng ký sự kiện mới, bấm nút Làm mới dữ liệu Google Sheet ở trên hoặc đợi vài chục giây để Google Sheet cập nhật CSV.")
+        st.caption("Nếu vừa đăng ký sự kiện mới mà không thấy ở đây, kiểm tra lại csv_url có đang export đúng tab Google Sheet mà Apps Script ghi dữ liệu không.")
+        st.caption(f"Số dòng đọc được từ Google Sheet: {len(approval_df)} | Số dòng trong năm {today.year}: {len(approval_df[approval_df['start'].dt.year == today.year]) if len(approval_df) > 0 else 0}")
     else:
         display_df = build_approval_summary_table(pending_df)
         show_table_with_download(
