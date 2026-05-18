@@ -480,19 +480,14 @@ def post_to_gsheet(payload):
         return save_pending_local(payload)
 
     try:
-        # Dùng GET query parameter để tránh một số trường hợp Google Apps Script POST trả HTML.
-        response = requests.get(
-            url,
-            params={"payload": json.dumps(payload, ensure_ascii=False)},
-            headers={"Accept": "application/json"},
-            timeout=30
-        )
+        response = requests.post(url, data={"payload": json.dumps(payload, ensure_ascii=False)}, headers={"Accept": "application/json"}, timeout=30)
     except Exception as e:
         raise RuntimeError("Không kết nối được Apps Script Web App. Vui lòng kiểm tra webhook_url trong secrets.toml.") from e
 
     if response.status_code == 403:
         raise RuntimeError(
-            "Apps Script Web App đang từ chối truy cập (403). Kiểm tra Web app: Execute as = Me, Who has access = Anyone."
+            "Apps Script Web App đang từ chối truy cập (403). Kiểm tra Deploy Web app: "
+            "Execute as = Me, Who has access = Anyone, sau đó Deploy lại và copy URL /exec mới."
         )
 
     if response.status_code >= 400:
@@ -501,17 +496,20 @@ def post_to_gsheet(payload):
     try:
         data = response.json()
     except Exception:
-        preview = response.text[:220].replace("\n", " ").replace("\r", " ")
+        preview = response.text[:180].replace("\n", " ").replace("\r", " ")
         raise RuntimeError(
-            "Apps Script không trả về JSON hợp lệ. Cần dùng bản Apps Script mới hỗ trợ doGet(payload). "
+            "Apps Script không trả về JSON hợp lệ. Có thể đang dùng URL/deployment cũ hoặc Apps Script trả HTML. "
             "Phản hồi đầu: " + preview
         )
 
     if not data.get("ok", False):
         raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
 
+    # Xóa cache để app đọc lại dữ liệu mới từ Google Sheet CSV
     st.cache_data.clear()
     return data
+
+
 
 def show_webhook_config_error():
     st.error("Chưa cấu hình Apps Script Web App URL nên app chưa ghi/cập nhật được Google Sheet.")
@@ -670,7 +668,7 @@ def parse_event_date(value):
 
 
 # ================= LOAD DATA =================
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=120)
 def load_data():
     df = read_google_sheet_source()
     df.columns = df.columns.str.strip()
@@ -885,83 +883,37 @@ def load_data_no_cache():
     return df_raw
 
 
-def normalize_approval_value(value):
-    txt = clean_text(value)
-    if txt.lower() in ["nan", "none", "nat"]:
-        return ""
-    return txt
-
-def get_approval_series(df_input):
-    if df_input is None or len(df_input) == 0:
-        return pd.Series([], dtype=str)
-
+def approval_text_from_row(row):
     candidates = [
         "approval_opinion",
         "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
         "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
         "Ý kiến của Phòng Hành chính Tổng hợp",
     ]
+    for c in candidates:
+        if c in row.index:
+            return clean_text(row.get(c, ""))
+    return ""
 
-    for col in candidates:
-        if col in df_input.columns:
-            return df_input[col].apply(normalize_approval_value)
-
-    return pd.Series([""] * len(df_input), index=df_input.index, dtype=str)
-
-def filter_approved_events(df_input):
-    """Chỉ giữ sự kiện đã phê duyệt là Thống nhất."""
+def filter_calendar_approved(df_input):
     if df_input is None or len(df_input) == 0:
         return df_input
     df_out = df_input.copy()
-    approval = get_approval_series(df_out)
-    return df_out[approval.eq("Thống nhất") | approval.str.startswith("Thống nhất:")].copy()
-
-def filter_pending_approval_events(df_input, current_year):
-    """Giữ sự kiện năm hiện hành chưa có ý kiến phê duyệt."""
-    if df_input is None or len(df_input) == 0:
-        return df_input
-    df_out = df_input.copy()
-    approval = get_approval_series(df_out)
-    return df_out[(df_out["start"].dt.year == current_year) & (approval == "")].copy()
-
-
-
-def is_approved_value(value):
-    txt = clean_text(value)
-    return txt == "Thống nhất" or txt.startswith("Thống nhất:")
-
-def get_approval_series(df_input):
-    if df_input is None or len(df_input) == 0:
-        return pd.Series([], dtype=str)
-
-    candidates = [
-        "approval_opinion",
-        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
-        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
-        "Ý kiến của Phòng Hành chính Tổng hợp",
-    ]
-
-    for col in candidates:
-        if col in df_input.columns:
-            return df_input[col].fillna("").astype(str).apply(clean_text)
-
-    return pd.Series([""] * len(df_input), index=df_input.index, dtype=str)
-
-def filter_approved_events(df_input):
-    if df_input is None or len(df_input) == 0:
-        return df_input
-    df_out = df_input.copy()
-    approval = get_approval_series(df_out)
-    return df_out[approval.apply(is_approved_value)].copy()
+    approval_values = df_out.apply(approval_text_from_row, axis=1)
+    return df_out[
+        approval_values.eq("Thống nhất") | approval_values.str.startswith("Thống nhất:")
+    ].copy()
 
 def filter_pending_approval_events(df_input, current_year):
     if df_input is None or len(df_input) == 0:
         return df_input
     df_out = df_input.copy()
-    approval = get_approval_series(df_out)
-    approval = approval.replace(["nan", "None", "NaN"], "")
-    return df_out[(df_out["start"].dt.year == current_year) & (approval == "")].copy()
-
+    approvals = df_out.apply(approval_text_from_row, axis=1)
+    approvals = approvals.replace(["nan", "None", "NaN"], "")
+    return df_out[
+        (df_out["start"].dt.year == current_year)
+        & (approvals == "")
+    ].copy()
 
 # ================= DATA =================
 df = load_data()
@@ -994,8 +946,6 @@ st.sidebar.write("✅ Đang chọn:", ", ".join(selected))
 
 df_f = df if "Toàn trường" in selected else df[df["donvi"].isin(selected)]
 df_all = df_f.copy()
-df_approved = filter_approved_events(df_all)
-
 df_year = df_f[df_f["start"].dt.year == today.year]
 df_month = df_year[df_year["start"].dt.month == today.month]
 
@@ -1015,7 +965,6 @@ def get_admin_password():
         return ""
 
 def require_user_login():
-    """Mật khẩu dùng chung cho các menu không công khai."""
     if st.session_state.get("user_logged_in", False):
         return True
 
@@ -1032,18 +981,15 @@ def require_user_login():
 password = "MAT_KHAU_NGUOI_DUNG"
 """, language="toml")
             return False
-
         if password == user_password:
             st.session_state.user_logged_in = True
             st.success("Đăng nhập thành công.")
             st.rerun()
         else:
             st.error("Sai mật khẩu.")
-
     return False
 
 def require_admin_login():
-    """Mật khẩu riêng dành cho quản trị viên phê duyệt."""
     if st.session_state.get("admin_logged_in", False):
         return True
 
@@ -1060,24 +1006,19 @@ def require_admin_login():
 password = "MAT_KHAU_QUAN_TRI"
 """, language="toml")
             return False
-
         if password == admin_password:
             st.session_state.admin_logged_in = True
             st.success("Đăng nhập quản trị thành công.")
             st.rerun()
         else:
             st.error("Sai mật khẩu quản trị.")
-
     return False
 
 def enforce_menu_access(menu_name):
-    """Dashboard và Liên hệ là công khai; Phê duyệt dùng admin; các menu còn lại dùng mật khẩu người dùng."""
     if menu_name in ["Dashboard", "Liên hệ"]:
         return True
-
     if menu_name == "Phê duyệt":
         return require_admin_login()
-
     return require_user_login()
 
 # ================= ĐĂNG KÝ =================
@@ -1143,27 +1084,27 @@ if menu == "Đăng ký":
         if support_flag == "CÓ":
             st.markdown('<div class="table-title">Nội dung hỗ trợ</div>', unsafe_allow_html=True)
             s1, s2, s3 = st.columns(3)
-        with s1:
-            support_ban_don_tiep = st.number_input("Số lượng bàn đón tiếp", min_value=0, step=1)
-            support_khan_ban = st.selectbox("Cần trải khăn bàn hội trường", ["KHÔNG", "CÓ"])
-            support_le_tan = st.number_input("Số lượng lễ tân", min_value=0, step=1)
-            support_bang_ten = st.number_input("Số lượng bảng tên (bảng mica)", min_value=0, step=1)
-            support_bia_ky_ket = st.number_input("Số lượng bìa ký kết", min_value=0, step=1)
-            support_nuoc_uong = st.number_input("Số lượng nước uống", min_value=0, step=1)
-        with s2:
-            support_teabreak = st.number_input("Số phần Teabreak", min_value=0, step=1)
-            support_hoa_ban = st.number_input("Số lượng hoa để bàn", min_value=0, step=1)
-            support_hoa_buc = st.number_input("Số lượng hoa để bục phát biểu", min_value=0, step=1)
-            support_hoa_tang = st.number_input("Số lượng hoa bó để tặng", min_value=0, step=1)
-            support_qua_tang = st.number_input("Số lượng quà tặng", min_value=0, step=1)
-            support_brochure = st.number_input("Số lượng Brochure", min_value=0, step=1)
-        with s3:
-            support_khay_bung = st.number_input("Số lượng khay bưng", min_value=0, step=1)
-            support_bandroll_standee = st.text_input("Số lượng bandroll, standee cần in và thi công")
-            support_backdrop = st.text_input("Số lượng Backdrop cần in và thi công")
-            support_bang_dien_tu = st.selectbox("Cần chạy bảng điện tử", ["KHÔNG", "CÓ"])
-            support_thu_moi = st.selectbox("Cần gửi thư mời", ["KHÔNG", "CÓ"])
-            support_khac = st.text_area("Các yêu cầu khác (nếu có)")
+            with s1:
+                support_ban_don_tiep = st.number_input("Số lượng bàn đón tiếp", min_value=0, step=1)
+                support_khan_ban = st.selectbox("Cần trải khăn bàn hội trường", ["KHÔNG", "CÓ"])
+                support_le_tan = st.number_input("Số lượng lễ tân", min_value=0, step=1)
+                support_bang_ten = st.number_input("Số lượng bảng tên (bảng mica)", min_value=0, step=1)
+                support_bia_ky_ket = st.number_input("Số lượng bìa ký kết", min_value=0, step=1)
+                support_nuoc_uong = st.number_input("Số lượng nước uống", min_value=0, step=1)
+            with s2:
+                support_teabreak = st.number_input("Số phần Teabreak", min_value=0, step=1)
+                support_hoa_ban = st.number_input("Số lượng hoa để bàn", min_value=0, step=1)
+                support_hoa_buc = st.number_input("Số lượng hoa để bục phát biểu", min_value=0, step=1)
+                support_hoa_tang = st.number_input("Số lượng hoa bó để tặng", min_value=0, step=1)
+                support_qua_tang = st.number_input("Số lượng quà tặng", min_value=0, step=1)
+                support_brochure = st.number_input("Số lượng Brochure", min_value=0, step=1)
+            with s3:
+                support_khay_bung = st.number_input("Số lượng khay bưng", min_value=0, step=1)
+                support_bandroll_standee = st.text_input("Số lượng bandroll, standee cần in và thi công")
+                support_backdrop = st.text_input("Số lượng Backdrop cần in và thi công")
+                support_bang_dien_tu = st.selectbox("Cần chạy bảng điện tử", ["KHÔNG", "CÓ"])
+                support_thu_moi = st.selectbox("Cần gửi thư mời", ["KHÔNG", "CÓ"])
+                support_khac = st.text_area("Các yêu cầu khác (nếu có)")
 
         submitted = st.form_submit_button("Gửi đăng ký")
 
@@ -1207,7 +1148,7 @@ if menu == "Đăng ký":
                     st.info("Chưa cấu hình Apps Script Web App URL. Dữ liệu đăng ký đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                 else:
                     st.cache_data.clear()
-                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất.")
+                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất.")
             except Exception as e:
                 if "webhook_url" in str(e):
                     show_webhook_config_error()
@@ -1216,7 +1157,6 @@ if menu == "Đăng ký":
 
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
-    df_f = df_approved.copy()
     if st.button("🔄 Làm mới dữ liệu lịch"):
         st.cache_data.clear()
         st.rerun()
@@ -1224,11 +1164,13 @@ elif menu == "Dashboard":
     try:
         fresh_dashboard_df = load_data_no_cache()
         fresh_dashboard_df = fresh_dashboard_df if "Toàn trường" in selected else fresh_dashboard_df[fresh_dashboard_df["donvi"].isin(selected)]
-        df_f = filter_approved_events(fresh_dashboard_df.copy())
+        df_f = fresh_dashboard_df.copy()
     except Exception:
         pass
+
+
     # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
-    df_f = filter_approved_events(df_f)
+    df_f = filter_calendar_approved(df_f)
 
     events = []
 
@@ -1413,8 +1355,6 @@ elif menu == "Báo cáo":
     if not enforce_menu_access(menu):
         st.stop()
 
-    df_f = df_approved.copy()
-    df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">📊 Báo cáo sự kiện theo đơn vị</div>', unsafe_allow_html=True)
 
     st.markdown(
@@ -1489,8 +1429,6 @@ elif menu == "Cảnh báo":
     if not enforce_menu_access(menu):
         st.stop()
 
-    df_f = df_approved.copy()
-    df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
 
     df_check = df_f[(df_f["start"] >= today) & (df_f["start"] <= today + timedelta(days=30))].copy()
@@ -1545,8 +1483,6 @@ elif menu == "Hỗ trợ":
     if not enforce_menu_access(menu):
         st.stop()
 
-    df_f = df_approved.copy()
-    df_f = filter_approved_events(df_f)
     st.markdown("")
 
     st.markdown('<div class="table-title">Chọn kỳ thống kê hỗ trợ</div>', unsafe_allow_html=True)
@@ -1593,8 +1529,6 @@ elif menu == "Truy vấn AI":
     if not enforce_menu_access(menu):
         st.stop()
 
-    df_f = df_approved.copy()
-    df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">🤖 Truy vấn AI</div>', unsafe_allow_html=True)
     q = st.text_input("Nhập câu hỏi, ví dụ: tuần, tháng, năm, hỗ trợ")
 
@@ -1648,11 +1582,14 @@ elif menu == "Phê duyệt":
     if not enforce_menu_access(menu):
         st.stop()
 
-    if st.button("Đăng xuất quản trị", key="admin_logout_button"):
+    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
+
+    if not require_admin_login():
+        st.stop()
+
+    if st.button("Đăng xuất quản trị"):
         st.session_state.admin_logged_in = False
         st.rerun()
-
-    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
 
     if st.button("🔄 Làm mới dữ liệu Google Sheet"):
         st.cache_data.clear()
@@ -1666,9 +1603,6 @@ elif menu == "Phê duyệt":
         approval_source_df = df_f.copy()
 
     approval_df = approval_source_df.copy()
-    if "approval_opinion" not in approval_df.columns:
-        pending_df = filter_pending_approval_events(approval_df, today.year)
-
 
     pending_df = filter_pending_approval_events(approval_df, today.year)
     pending_df = pending_df.sort_values("start", ascending=True)
