@@ -1506,54 +1506,60 @@ elif menu == "Cảnh báo":
     if not enforce_menu_access(menu):
         st.stop()
 
-    st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Cảnh báo trùng lịch</div>', unsafe_allow_html=True)
 
-    df_check = df_f[(df_f["start"] >= today) & (df_f["start"] <= today + timedelta(days=30))].copy()
-    found = False
-    rows = []
+    # Quét toàn bộ dữ liệu, không giới hạn 30 ngày tới.
+    # Nếu chỉ quét 30 ngày thì các lịch trùng ở các tháng sau sẽ bị bỏ sót.
+    warn_df = df_f.copy()
+    warn_df = warn_df.dropna(subset=["start", "end"])
+    warn_df = warn_df.sort_values("start").reset_index(drop=True)
 
-    for i in range(len(df_check)):
-        for j in range(i + 1, len(df_check)):
-            s1 = df_check.iloc[i]["start"]
-            s2 = df_check.iloc[j]["start"]
-            loc1 = clean_text(df_check.iloc[i].get("location", ""))
-            loc2 = clean_text(df_check.iloc[j].get("location", ""))
+    conflicts = []
 
-            same_time = s1 == s2
-            overlap = df_check.iloc[i]["start"] < df_check.iloc[j]["end"] and df_check.iloc[j]["start"] < df_check.iloc[i]["end"]
+    for i in range(len(warn_df)):
+        a = warn_df.iloc[i]
+        for j in range(i + 1, len(warn_df)):
+            b = warn_df.iloc[j]
 
-            if same_time or overlap:
-                found = True
-                time_str_1 = s1.strftime("%H:%M %d/%m/%Y") if not (s1.hour == 0 and s1.minute == 0) else s1.strftime("%d/%m/%Y")
-                time_str_2 = s2.strftime("%H:%M %d/%m/%Y") if not (s2.hour == 0 and s2.minute == 0) else s2.strftime("%d/%m/%Y")
+            # Nếu sự kiện sau bắt đầu sau khi sự kiện trước đã kết thúc thì không trùng về thời gian.
+            if pd.notna(a["end"]) and pd.notna(b["start"]) and b["start"] >= a["end"]:
+                continue
 
-                st.warning(f"""
-🕒 Thời gian trùng/chồng lấn:
+            same_day_or_overlap = (
+                pd.notna(a["start"])
+                and pd.notna(a["end"])
+                and pd.notna(b["start"])
+                and pd.notna(b["end"])
+                and a["start"] < b["end"]
+                and b["start"] < a["end"]
+            )
 
-• {time_str_1} - {df_check.iloc[i]['event']}
-  - Địa điểm: {loc1}
+            same_location = clean_text(a.get("location", "")).lower() == clean_text(b.get("location", "")).lower()
 
-• {time_str_2} - {df_check.iloc[j]['event']}
-  - Địa điểm: {loc2}
-""")
-
-                rows.append({
-                    "Sự kiện 1": df_check.iloc[i]["event"],
-                    "Thời gian 1": time_str_1,
-                    "Địa điểm 1": loc1,
-                    "Sự kiện 2": df_check.iloc[j]["event"],
-                    "Thời gian 2": time_str_2,
-                    "Địa điểm 2": loc2
+            # Cảnh báo khi trùng thời gian; nếu cùng địa điểm thì càng chắc chắn.
+            if same_day_or_overlap:
+                conflicts.append({
+                    "Thời gian": a["start"].strftime("%d/%m/%Y %H:%M"),
+                    "Kết thúc": a["end"].strftime("%d/%m/%Y %H:%M") if pd.notna(a["end"]) else "",
+                    "Sự kiện 1": clean_text(a.get("event", "")),
+                    "Đơn vị 1": clean_text(a.get("donvi", "")),
+                    "Địa điểm 1": clean_text(a.get("location", "")),
+                    "Sự kiện 2": clean_text(b.get("event", "")),
+                    "Đơn vị 2": clean_text(b.get("donvi", "")),
+                    "Địa điểm 2": clean_text(b.get("location", "")),
+                    "Mức cảnh báo": "Trùng thời gian và địa điểm" if same_location else "Trùng thời gian"
                 })
 
-    if not found:
-        st.success("Không phát hiện lịch bị trùng trong 30 ngày tới")
+    if not conflicts:
+        st.success("Không phát hiện lịch bị trùng trong dữ liệu hiện có.")
     else:
+        conflict_df = pd.DataFrame(conflicts)
         show_table_with_download(
-            "Bảng chi tiết lịch trùng/chồng lấn",
-            pd.DataFrame(rows),
+            "Danh sách lịch bị trùng",
+            conflict_df,
             "canh_bao_trung_lich.xlsx"
         )
+
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
