@@ -925,6 +925,44 @@ def filter_pending_approval_events(df_input, current_year):
     return df_out[(df_out["start"].dt.year == current_year) & (approval == "")].copy()
 
 
+
+def is_approved_value(value):
+    txt = clean_text(value)
+    return txt == "Thống nhất" or txt.startswith("Thống nhất:")
+
+def get_approval_series(df_input):
+    if df_input is None or len(df_input) == 0:
+        return pd.Series([], dtype=str)
+
+    candidates = [
+        "approval_opinion",
+        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
+        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
+        "Ý kiến của Phòng Hành chính Tổng hợp",
+    ]
+
+    for col in candidates:
+        if col in df_input.columns:
+            return df_input[col].fillna("").astype(str).apply(clean_text)
+
+    return pd.Series([""] * len(df_input), index=df_input.index, dtype=str)
+
+def filter_approved_events(df_input):
+    if df_input is None or len(df_input) == 0:
+        return df_input
+    df_out = df_input.copy()
+    approval = get_approval_series(df_out)
+    return df_out[approval.apply(is_approved_value)].copy()
+
+def filter_pending_approval_events(df_input, current_year):
+    if df_input is None or len(df_input) == 0:
+        return df_input
+    df_out = df_input.copy()
+    approval = get_approval_series(df_out)
+    approval = approval.replace(["nan", "None", "NaN"], "")
+    return df_out[(df_out["start"].dt.year == current_year) & (approval == "")].copy()
+
+
 # ================= DATA =================
 df = load_data()
 today = datetime.today()
@@ -962,20 +1000,56 @@ df_year = df_f[df_f["start"].dt.year == today.year]
 df_month = df_year[df_year["start"].dt.month == today.month]
 
 
-# ================= ADMIN AUTH =================
+
+# ================= ACCESS AUTH =================
+def get_user_password():
+    try:
+        return st.secrets.get("user", {}).get("password", "")
+    except Exception:
+        return ""
+
 def get_admin_password():
     try:
         return st.secrets.get("admin", {}).get("password", "")
     except Exception:
         return ""
 
+def require_user_login():
+    """Mật khẩu dùng chung cho các menu không công khai."""
+    if st.session_state.get("user_logged_in", False):
+        return True
+
+    st.warning("Chức năng này chỉ dành cho người dùng được cấp mật khẩu.")
+    password = st.text_input("Nhập mật khẩu người dùng", type="password", key="user_password_input")
+    login = st.button("Đăng nhập", key="user_login_button")
+
+    if login:
+        user_password = get_user_password()
+        if not user_password:
+            st.error("Chưa cấu hình mật khẩu người dùng trong secrets.toml.")
+            st.code("""
+[user]
+password = "MAT_KHAU_NGUOI_DUNG"
+""", language="toml")
+            return False
+
+        if password == user_password:
+            st.session_state.user_logged_in = True
+            st.success("Đăng nhập thành công.")
+            st.rerun()
+        else:
+            st.error("Sai mật khẩu.")
+
+    return False
+
 def require_admin_login():
+    """Mật khẩu riêng dành cho quản trị viên phê duyệt."""
     if st.session_state.get("admin_logged_in", False):
         return True
 
     st.warning("Menu Phê duyệt chỉ dành cho quản trị viên.")
-    password = st.text_input("Nhập mật khẩu quản trị", type="password")
-    login = st.button("Đăng nhập quản trị")
+    password = st.text_input("Nhập mật khẩu quản trị", type="password", key="admin_password_input")
+    login = st.button("Đăng nhập quản trị", key="admin_login_button")
 
     if login:
         admin_password = get_admin_password()
@@ -996,14 +1070,21 @@ password = "MAT_KHAU_QUAN_TRI"
 
     return False
 
+def enforce_menu_access(menu_name):
+    """Dashboard và Liên hệ là công khai; Phê duyệt dùng admin; các menu còn lại dùng mật khẩu người dùng."""
+    if menu_name in ["Dashboard", "Liên hệ"]:
+        return True
 
+    if menu_name == "Phê duyệt":
+        return require_admin_login()
 
-
-
-
+    return require_user_login()
 
 # ================= ĐĂNG KÝ =================
 if menu == "Đăng ký":
+    if not enforce_menu_access(menu):
+        st.stop()
+
     st.markdown('<div style="font-size:14px;font-weight:700;">📝 Đăng ký sự kiện</div>', unsafe_allow_html=True)
     st.info("Dữ liệu đăng ký tạm thời được ghi vào Google Sheet hiện app đang đọc. Sau này lên server trường có thể đổi sang SharePoint List.")
 
@@ -1040,8 +1121,28 @@ if menu == "Đăng ký":
             email = st.text_input("Email")
             support_flag = st.selectbox("Có yêu cầu hỗ trợ?", ["KHÔNG", "CÓ"])
 
-        st.markdown('<div class="table-title">Nội dung hỗ trợ</div>', unsafe_allow_html=True)
-        s1, s2, s3 = st.columns(3)
+        support_ban_don_tiep = 0
+        support_khan_ban = "KHÔNG"
+        support_le_tan = 0
+        support_bang_ten = 0
+        support_bia_ky_ket = 0
+        support_nuoc_uong = 0
+        support_teabreak = 0
+        support_hoa_ban = 0
+        support_hoa_buc = 0
+        support_hoa_tang = 0
+        support_qua_tang = 0
+        support_brochure = 0
+        support_khay_bung = 0
+        support_bandroll_standee = ""
+        support_backdrop = ""
+        support_bang_dien_tu = "KHÔNG"
+        support_thu_moi = "KHÔNG"
+        support_khac = ""
+
+        if support_flag == "CÓ":
+            st.markdown('<div class="table-title">Nội dung hỗ trợ</div>', unsafe_allow_html=True)
+            s1, s2, s3 = st.columns(3)
         with s1:
             support_ban_don_tiep = st.number_input("Số lượng bàn đón tiếp", min_value=0, step=1)
             support_khan_ban = st.selectbox("Cần trải khăn bàn hội trường", ["KHÔNG", "CÓ"])
@@ -1106,7 +1207,7 @@ if menu == "Đăng ký":
                     st.info("Chưa cấu hình Apps Script Web App URL. Dữ liệu đăng ký đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                 else:
                     st.cache_data.clear()
-                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Vào Dashboard và bấm Làm mới dữ liệu lịch nếu chưa thấy ngay.")
+                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất.")
             except Exception as e:
                 if "webhook_url" in str(e):
                     show_webhook_config_error()
@@ -1309,6 +1410,9 @@ elif menu == "Dashboard":
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
+    if not enforce_menu_access(menu):
+        st.stop()
+
     df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">📊 Báo cáo sự kiện theo đơn vị</div>', unsafe_allow_html=True)
@@ -1382,6 +1486,9 @@ elif menu == "Báo cáo":
 
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
+    if not enforce_menu_access(menu):
+        st.stop()
+
     df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
@@ -1435,6 +1542,9 @@ elif menu == "Cảnh báo":
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
+    if not enforce_menu_access(menu):
+        st.stop()
+
     df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown("")
@@ -1480,6 +1590,9 @@ elif menu == "Hỗ trợ":
 
 # ================= TRUY VẤN AI =================
 elif menu == "Truy vấn AI":
+    if not enforce_menu_access(menu):
+        st.stop()
+
     df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">🤖 Truy vấn AI</div>', unsafe_allow_html=True)
@@ -1532,14 +1645,14 @@ elif menu == "Truy vấn AI":
 
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
-    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
-
-    if not require_admin_login():
+    if not enforce_menu_access(menu):
         st.stop()
 
-    if st.button("Đăng xuất quản trị"):
+    if st.button("Đăng xuất quản trị", key="admin_logout_button"):
         st.session_state.admin_logged_in = False
         st.rerun()
+
+    st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
 
     if st.button("🔄 Làm mới dữ liệu Google Sheet"):
         st.cache_data.clear()
@@ -1613,7 +1726,7 @@ elif menu == "Phê duyệt":
                     if result.get("local_pending"):
                         st.info("Chưa cấu hình Apps Script Web App URL. Phê duyệt đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                     else:
-                        st.success("Đã cập nhật phê duyệt vào Google Sheet.")
+                        st.success(f"Đã phê duyệt thành công: {opinion}")
                     st.rerun()
                 except Exception as e:
                     if "webhook_url" in str(e):
