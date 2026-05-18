@@ -479,37 +479,55 @@ def post_to_gsheet(payload):
     if not url:
         return save_pending_local(payload)
 
+    def _parse_response(response):
+        if response.status_code == 403:
+            raise RuntimeError("Apps Script Web App đang từ chối truy cập (403).")
+        if response.status_code >= 400:
+            raise RuntimeError(f"Apps Script Web App trả về lỗi HTTP {response.status_code}.")
+
+        try:
+            data = response.json()
+        except Exception:
+            preview = response.text[:260].replace("\n", " ").replace("\r", " ")
+            raise RuntimeError(
+                "Apps Script không trả về JSON hợp lệ. Link webhook_url có thể chưa đúng bản Deploy hoặc Apps Script đang lỗi. "
+                "Phản hồi đầu: " + preview
+            )
+
+        if not data.get("ok", False):
+            raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
+
+        return data
+
+    # Cách 1: GET với action + payload. Cách này tránh một số lỗi POST trả HTML.
     try:
-        # Gọi Apps Script bằng GET payload để tránh lỗi Google trả HTML khi POST.
         response = requests.get(
             url,
-            params={"payload": json.dumps(payload, ensure_ascii=False)},
+            params={
+                "action": payload.get("action", ""),
+                "payload": json.dumps(payload, ensure_ascii=False),
+            },
             headers={"Accept": "application/json"},
             timeout=30
         )
+        data = _parse_response(response)
+        st.cache_data.clear()
+        return data
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+
+    # Cách 2 dự phòng: POST JSON.
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        data = _parse_response(response)
+        st.cache_data.clear()
+        return data
+    except RuntimeError:
+        raise
     except Exception as e:
         raise RuntimeError("Không kết nối được Apps Script Web App. Vui lòng kiểm tra webhook_url trong secrets.toml.") from e
-
-    if response.status_code == 403:
-        raise RuntimeError("Apps Script Web App đang từ chối truy cập (403).")
-
-    if response.status_code >= 400:
-        raise RuntimeError(f"Apps Script Web App trả về lỗi HTTP {response.status_code}.")
-
-    try:
-        data = response.json()
-    except Exception:
-        preview = response.text[:200].replace("\n", " ").replace("\r", " ")
-        raise RuntimeError(
-            "Apps Script không trả về JSON hợp lệ. Cần dán bản Apps Script mới hỗ trợ doGet(payload), "
-            "Deploy New version, rồi Reboot app. Phản hồi đầu: " + preview
-        )
-
-    if not data.get("ok", False):
-        raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
-
-    st.cache_data.clear()
-    return data
 
 def show_webhook_config_error():
     st.error("Chưa cấu hình Apps Script Web App URL nên app chưa ghi/cập nhật được Google Sheet.")
@@ -1218,8 +1236,17 @@ elif menu == "Dashboard":
     # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
     df_f = keep_only_thong_nhat_for_calendar(df_f)
     df_year = df_f.copy()
-    approved_dashboard_df = df_year.copy()
-    st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
+
+    # Thống kê Dashboard lấy từ chính dữ liệu đã lọc để hiển thị trên lịch.
+    dashboard_count_month = len(df_year[df_year["start"].dt.month == current_month])
+    dashboard_count_year = len(df_year)
+    try:
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=7)
+        dashboard_count_week = len(df_year[(df_year["start"] >= week_start) & (df_year["start"] < week_end)])
+    except Exception:
+        dashboard_count_week = 0
+        st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
 
     events = []
 
