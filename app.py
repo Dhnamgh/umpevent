@@ -444,6 +444,36 @@ def safe_error_message(err):
     msg = re.sub(r"https://docs\.google\.com/spreadsheets/d/[^\\s\\)\\]]+", "[GOOGLE_SHEET_URL_ẨN]", msg)
     return msg
 
+
+def read_google_sheet_source():
+    """
+    Đọc dữ liệu nguồn.
+    Ưu tiên đọc trực tiếp qua Apps Script Web App nếu đã cấu hình webhook_url,
+    để tránh lỗi CSV Google Sheet chậm cập nhật hoặc đọc nhầm tab.
+    Nếu Apps Script chưa có action=read thì fallback về csv_url.
+    """
+    webhook_url = get_gsheet_webhook_url()
+
+    if webhook_url:
+        try:
+            response = requests.get(
+                webhook_url,
+                params={"action": "read"},
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("ok") and isinstance(data.get("rows"), list):
+                    return pd.DataFrame(data["rows"])
+        except Exception:
+            pass
+
+    csv_url = st.secrets["data"]["csv_url"]
+    # cache-bust để giảm khả năng Google trả CSV cũ
+    sep = "&" if "?" in csv_url else "?"
+    return pd.read_csv(f"{csv_url}{sep}_ts={int(datetime.now().timestamp())}")
+
 def post_to_gsheet(payload):
     url = get_gsheet_webhook_url()
     if not url:
@@ -466,7 +496,10 @@ def post_to_gsheet(payload):
     try:
         data = response.json()
     except Exception:
-        data = {"ok": False, "message": "Apps Script không trả về JSON hợp lệ."}
+        raise RuntimeError(
+            "Apps Script không trả về JSON hợp lệ. Cần cập nhật lại Apps Script bằng bản do app cung cấp, "
+            "sau đó Deploy → Manage deployments → Edit → New version → Deploy."
+        )
 
     if not data.get("ok", False):
         raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
@@ -636,7 +669,7 @@ def parse_event_date(value):
 # ================= LOAD DATA =================
 @st.cache_data(ttl=30)
 def load_data():
-    df = pd.read_csv(st.secrets["data"]["csv_url"])
+    df = read_google_sheet_source()
     df.columns = df.columns.str.strip()
 
     df = df.rename(columns={
@@ -778,7 +811,7 @@ def build_support_table(df_input):
 
 def load_data_no_cache():
     """Đọc trực tiếp Google Sheet CSV, không dùng cache, dùng riêng cho menu Phê duyệt."""
-    df_raw = pd.read_csv(st.secrets["data"]["csv_url"])
+    df_raw = read_google_sheet_source()
     df_raw.columns = df_raw.columns.str.strip()
 
     df_raw = df_raw.rename(columns={
@@ -1429,7 +1462,7 @@ elif menu == "Phê duyệt":
 
     if len(pending_df) == 0:
         st.success("Không có sự kiện đang chờ phê duyệt.")
-        st.caption("Nếu vừa đăng ký sự kiện mới mà không thấy ở đây, kiểm tra lại csv_url có đang export đúng tab Google Sheet mà Apps Script ghi dữ liệu không.")
+        st.caption("Nếu vừa đăng ký sự kiện mới mà không thấy ở đây, hãy cập nhật Apps Script theo bản có action=read để app đọc trực tiếp sheet vừa ghi.")
         st.caption(f"Số dòng đọc được từ Google Sheet: {len(approval_df)} | Số dòng trong năm {today.year}: {len(approval_df[approval_df['start'].dt.year == today.year]) if len(approval_df) > 0 else 0}")
     else:
         display_df = build_approval_summary_table(pending_df)
@@ -1459,7 +1492,7 @@ elif menu == "Phê duyệt":
 
         opinion = st.selectbox(
             "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
-            ["Đồng ý", "Cần kiểm tra lại", "Không đồng ý"]
+            ["Thống nhất", "Chờ phản hồi", "Không thống nhất"]
         )
         reason = st.text_area("Lý do/Ghi chú")
 
