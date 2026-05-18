@@ -1555,6 +1555,9 @@ elif menu == "Phê duyệt":
     approval_df = approval_source_df.copy()
     if "approval_opinion" not in approval_df.columns:
         pending_df = filter_pending_approval_events(approval_df, today.year)
+
+
+    pending_df = filter_pending_approval_events(approval_df, today.year)
     pending_df = pending_df.sort_values("start", ascending=True)
 
     if len(pending_df) == 0:
