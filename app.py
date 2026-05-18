@@ -480,7 +480,7 @@ def post_to_gsheet(payload):
         return save_pending_local(payload)
 
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        response = requests.post(url, data={"payload": json.dumps(payload, ensure_ascii=False)}, headers={"Accept": "application/json"}, timeout=30)
     except Exception as e:
         raise RuntimeError("Không kết nối được Apps Script Web App. Vui lòng kiểm tra webhook_url trong secrets.toml.") from e
 
@@ -496,9 +496,10 @@ def post_to_gsheet(payload):
     try:
         data = response.json()
     except Exception:
+        preview = response.text[:180].replace("\n", " ").replace("\r", " ")
         raise RuntimeError(
-            "Apps Script không trả về JSON hợp lệ. Cần cập nhật lại Apps Script bằng bản do app cung cấp, "
-            "sau đó Deploy → Manage deployments → Edit → New version → Deploy."
+            "Apps Script không trả về JSON hợp lệ. Có thể đang dùng URL/deployment cũ hoặc Apps Script trả HTML. "
+            "Phản hồi đầu: " + preview
         )
 
     if not data.get("ok", False):
@@ -914,6 +915,54 @@ df_f = df if "Toàn trường" in selected else df[df["donvi"].isin(selected)]
 df_year = df_f[df_f["start"].dt.year == today.year]
 df_month = df_year[df_year["start"].dt.month == today.month]
 
+
+# ================= ADMIN AUTH =================
+def get_admin_password():
+    try:
+        return st.secrets.get("admin", {}).get("password", "")
+    except Exception:
+        return ""
+
+def require_admin_login():
+    if st.session_state.get("admin_logged_in", False):
+        return True
+
+    st.warning("Menu Phê duyệt chỉ dành cho quản trị viên.")
+    password = st.text_input("Nhập mật khẩu quản trị", type="password")
+    login = st.button("Đăng nhập quản trị")
+
+    if login:
+        admin_password = get_admin_password()
+        if not admin_password:
+            st.error("Chưa cấu hình mật khẩu quản trị trong secrets.toml.")
+            st.code("""
+[admin]
+password = "MAT_KHAU_QUAN_TRI"
+""", language="toml")
+            return False
+
+        if password == admin_password:
+            st.session_state.admin_logged_in = True
+            st.success("Đăng nhập quản trị thành công.")
+            st.rerun()
+        else:
+            st.error("Sai mật khẩu quản trị.")
+
+    return False
+
+
+def filter_approved_events(df_input):
+    """Chỉ hiển thị sự kiện đã được phê duyệt là Thống nhất."""
+    if df_input is None or len(df_input) == 0:
+        return df_input
+
+    df_out = df_input.copy()
+    if "approval_opinion" not in df_out.columns:
+        df_out["approval_opinion"] = ""
+
+    approval = df_out["approval_opinion"].fillna("").astype(str).str.strip()
+    return df_out[approval.str.startswith("Thống nhất")].copy()
+
 # ================= ĐĂNG KÝ =================
 if menu == "Đăng ký":
     st.markdown('<div style="font-size:14px;font-weight:700;">📝 Đăng ký sự kiện</div>', unsafe_allow_html=True)
@@ -1038,6 +1087,9 @@ elif menu == "Dashboard":
     except Exception:
         pass
 
+
+    # Lịch chỉ hiển thị các sự kiện đã được phê duyệt "Thống nhất".
+    df_f = filter_approved_events(df_f)
 
     events = []
 
@@ -1435,6 +1487,13 @@ elif menu == "Truy vấn AI":
 # ================= PHÊ DUYỆT =================
 elif menu == "Phê duyệt":
     st.markdown('<div style="font-size:14px;font-weight:700;">📋 Phê duyệt sự kiện</div>', unsafe_allow_html=True)
+
+    if not require_admin_login():
+        st.stop()
+
+    if st.button("Đăng xuất quản trị"):
+        st.session_state.admin_logged_in = False
+        st.rerun()
 
     if st.button("🔄 Làm mới dữ liệu Google Sheet"):
         st.cache_data.clear()
