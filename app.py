@@ -1239,15 +1239,18 @@ elif menu == "Dashboard":
     df_f = keep_only_thong_nhat_for_calendar(df_f)
     df_year = df_f.copy()
 
-    # Thống kê Dashboard chỉ dùng chính dữ liệu đã phê duyệt "Thống nhất" đang hiển thị trên lịch.
+    # Thống kê Dashboard lấy từ chính dữ liệu đã lọc để hiển thị trên lịch.
     dashboard_month = current_date.month if "current_date" in globals() else today.month
     dashboard_year = current_date.year if "current_date" in globals() else today.year
     dashboard_count_month = len(df_year[(df_year["start"].dt.month == dashboard_month) & (df_year["start"].dt.year == dashboard_year)])
-    dashboard_count_year = len(df_year[df_year["start"].dt.year == dashboard_year])
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=7)
-    dashboard_count_week = len(df_year[(df_year["start"] >= week_start) & (df_year["start"] < week_end)])
-    st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(df_year)} sự kiện.")
+    dashboard_count_year = len(df_year)
+    try:
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=7)
+        dashboard_count_week = len(df_year[(df_year["start"] >= week_start) & (df_year["start"] < week_end)])
+    except Exception:
+        dashboard_count_week = 0
+        st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
 
     events = []
 
@@ -1423,9 +1426,9 @@ elif menu == "Dashboard":
     df_week = df_year[(df_year["start"] >= start_week) & (df_year["start"] < end_week)]
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tuần", dashboard_count_week)
-    c2.metric("Tháng", dashboard_count_month)
-    c3.metric("Năm", dashboard_count_year)
+    c1.metric("Tuần", len(df_week))
+    c2.metric("Tháng", len(df_year))
+    c3.metric("Năm", len(df_year))
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
@@ -1506,60 +1509,54 @@ elif menu == "Cảnh báo":
     if not enforce_menu_access(menu):
         st.stop()
 
-    st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Cảnh báo trùng lịch</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
 
-    # Quét toàn bộ dữ liệu, không giới hạn 30 ngày tới.
-    # Nếu chỉ quét 30 ngày thì các lịch trùng ở các tháng sau sẽ bị bỏ sót.
-    warn_df = df_f.copy()
-    warn_df = warn_df.dropna(subset=["start", "end"])
-    warn_df = warn_df.sort_values("start").reset_index(drop=True)
+    df_check = df_f[(df_f["start"] >= today) & (df_f["start"] <= today + timedelta(days=30))].copy()
+    found = False
+    rows = []
 
-    conflicts = []
+    for i in range(len(df_check)):
+        for j in range(i + 1, len(df_check)):
+            s1 = df_check.iloc[i]["start"]
+            s2 = df_check.iloc[j]["start"]
+            loc1 = clean_text(df_check.iloc[i].get("location", ""))
+            loc2 = clean_text(df_check.iloc[j].get("location", ""))
 
-    for i in range(len(warn_df)):
-        a = warn_df.iloc[i]
-        for j in range(i + 1, len(warn_df)):
-            b = warn_df.iloc[j]
+            same_time = s1 == s2
+            overlap = df_check.iloc[i]["start"] < df_check.iloc[j]["end"] and df_check.iloc[j]["start"] < df_check.iloc[i]["end"]
 
-            # Nếu sự kiện sau bắt đầu sau khi sự kiện trước đã kết thúc thì không trùng về thời gian.
-            if pd.notna(a["end"]) and pd.notna(b["start"]) and b["start"] >= a["end"]:
-                continue
+            if same_time or overlap:
+                found = True
+                time_str_1 = s1.strftime("%H:%M %d/%m/%Y") if not (s1.hour == 0 and s1.minute == 0) else s1.strftime("%d/%m/%Y")
+                time_str_2 = s2.strftime("%H:%M %d/%m/%Y") if not (s2.hour == 0 and s2.minute == 0) else s2.strftime("%d/%m/%Y")
 
-            same_day_or_overlap = (
-                pd.notna(a["start"])
-                and pd.notna(a["end"])
-                and pd.notna(b["start"])
-                and pd.notna(b["end"])
-                and a["start"] < b["end"]
-                and b["start"] < a["end"]
-            )
+                st.warning(f"""
+🕒 Thời gian trùng/chồng lấn:
 
-            same_location = clean_text(a.get("location", "")).lower() == clean_text(b.get("location", "")).lower()
+• {time_str_1} - {df_check.iloc[i]['event']}
+  - Địa điểm: {loc1}
 
-            # Cảnh báo khi trùng thời gian; nếu cùng địa điểm thì càng chắc chắn.
-            if same_day_or_overlap:
-                conflicts.append({
-                    "Thời gian": a["start"].strftime("%d/%m/%Y %H:%M"),
-                    "Kết thúc": a["end"].strftime("%d/%m/%Y %H:%M") if pd.notna(a["end"]) else "",
-                    "Sự kiện 1": clean_text(a.get("event", "")),
-                    "Đơn vị 1": clean_text(a.get("donvi", "")),
-                    "Địa điểm 1": clean_text(a.get("location", "")),
-                    "Sự kiện 2": clean_text(b.get("event", "")),
-                    "Đơn vị 2": clean_text(b.get("donvi", "")),
-                    "Địa điểm 2": clean_text(b.get("location", "")),
-                    "Mức cảnh báo": "Trùng thời gian và địa điểm" if same_location else "Trùng thời gian"
+• {time_str_2} - {df_check.iloc[j]['event']}
+  - Địa điểm: {loc2}
+""")
+
+                rows.append({
+                    "Sự kiện 1": df_check.iloc[i]["event"],
+                    "Thời gian 1": time_str_1,
+                    "Địa điểm 1": loc1,
+                    "Sự kiện 2": df_check.iloc[j]["event"],
+                    "Thời gian 2": time_str_2,
+                    "Địa điểm 2": loc2
                 })
 
-    if not conflicts:
-        st.success("Không phát hiện lịch bị trùng trong dữ liệu hiện có.")
+    if not found:
+        st.success("Không phát hiện lịch bị trùng trong 30 ngày tới")
     else:
-        conflict_df = pd.DataFrame(conflicts)
         show_table_with_download(
-            "Danh sách lịch bị trùng",
-            conflict_df,
+            "Bảng chi tiết lịch trùng/chồng lấn",
+            pd.DataFrame(rows),
             "canh_bao_trung_lich.xlsx"
         )
-
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
