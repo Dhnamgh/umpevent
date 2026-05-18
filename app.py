@@ -1168,7 +1168,7 @@ if menu == "Đăng ký":
                     st.info("Chưa cấu hình Apps Script Web App URL. Dữ liệu đăng ký đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                 else:
                     st.cache_data.clear()
-                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất.")
+                    st.success("Đã gửi đăng ký và ghi vào Google Sheet. Sự kiện sẽ chỉ hiển thị trên lịch sau khi được phê duyệt là Thống nhất.")
             except Exception as e:
                 if "webhook_url" in str(e):
                     show_webhook_config_error()
