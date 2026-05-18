@@ -614,6 +614,25 @@ def build_event_query_table(df_input):
     return pd.DataFrame(rows, columns=columns)
 
 
+
+def parse_event_date(value):
+    """Parse ngày từ Google Sheet: hỗ trợ dd/mm/yyyy, yyyy-mm-dd và datetime."""
+    if pd.isna(value):
+        return pd.NaT
+
+    text_value = str(value).strip()
+    if not text_value:
+        return pd.NaT
+
+    # Thử định dạng ISO trước: 2026-05-29
+    dt = pd.to_datetime(text_value, errors="coerce", dayfirst=False)
+    if pd.notna(dt):
+        return dt
+
+    # Thử định dạng Việt Nam: 29/05/2026
+    return pd.to_datetime(text_value, errors="coerce", dayfirst=True)
+
+
 # ================= LOAD DATA =================
 @st.cache_data(ttl=30)
 def load_data():
