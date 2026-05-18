@@ -1217,7 +1217,7 @@ elif menu == "Dashboard":
 
     # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
     df_f = keep_only_thong_nhat_for_calendar(df_f)
-    df_year = approved_dashboard_df.copy()
+    df_year = df_f.copy()
     approved_dashboard_df = df_year.copy()
     st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
 
