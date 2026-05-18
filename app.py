@@ -480,15 +480,18 @@ def post_to_gsheet(payload):
         return save_pending_local(payload)
 
     try:
-        response = requests.post(url, data={"payload": json.dumps(payload, ensure_ascii=False)}, headers={"Accept": "application/json"}, timeout=30)
+        # Gọi Apps Script bằng GET payload để tránh lỗi Google trả HTML khi POST.
+        response = requests.get(
+            url,
+            params={"payload": json.dumps(payload, ensure_ascii=False)},
+            headers={"Accept": "application/json"},
+            timeout=30
+        )
     except Exception as e:
         raise RuntimeError("Không kết nối được Apps Script Web App. Vui lòng kiểm tra webhook_url trong secrets.toml.") from e
 
     if response.status_code == 403:
-        raise RuntimeError(
-            "Apps Script Web App đang từ chối truy cập (403). Kiểm tra Deploy Web app: "
-            "Execute as = Me, Who has access = Anyone, sau đó Deploy lại và copy URL /exec mới."
-        )
+        raise RuntimeError("Apps Script Web App đang từ chối truy cập (403).")
 
     if response.status_code >= 400:
         raise RuntimeError(f"Apps Script Web App trả về lỗi HTTP {response.status_code}.")
@@ -496,20 +499,17 @@ def post_to_gsheet(payload):
     try:
         data = response.json()
     except Exception:
-        preview = response.text[:180].replace("\n", " ").replace("\r", " ")
+        preview = response.text[:200].replace("\n", " ").replace("\r", " ")
         raise RuntimeError(
-            "Apps Script không trả về JSON hợp lệ. Có thể đang dùng URL/deployment cũ hoặc Apps Script trả HTML. "
-            "Phản hồi đầu: " + preview
+            "Apps Script không trả về JSON hợp lệ. Cần dán bản Apps Script mới hỗ trợ doGet(payload), "
+            "Deploy New version, rồi Reboot app. Phản hồi đầu: " + preview
         )
 
     if not data.get("ok", False):
         raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
 
-    # Xóa cache để app đọc lại dữ liệu mới từ Google Sheet CSV
     st.cache_data.clear()
     return data
-
-
 
 def show_webhook_config_error():
     st.error("Chưa cấu hình Apps Script Web App URL nên app chưa ghi/cập nhật được Google Sheet.")
@@ -1217,8 +1217,9 @@ elif menu == "Dashboard":
 
     # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
     df_f = keep_only_thong_nhat_for_calendar(df_f)
-    df_year = df_f.copy()
-    st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(df_f)} sự kiện.")
+    df_year = approved_dashboard_df.copy()
+    approved_dashboard_df = df_year.copy()
+    st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
 
     events = []
 
@@ -1708,7 +1709,8 @@ elif menu == "Phê duyệt":
                     if result.get("local_pending"):
                         st.info("Chưa cấu hình Apps Script Web App URL. Phê duyệt đã được lưu tạm vào file ump_events_local_pending.json trên server.")
                     else:
-                        st.success(f"Đã phê duyệt thành công: {opinion}")
+                        st.session_state["approval_success_message"] = f"Đã phê duyệt: {opinion}"
+                    st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
                     if "webhook_url" in str(e):
