@@ -1423,9 +1423,9 @@ elif menu == "Dashboard":
     df_week = df_year[(df_year["start"] >= start_week) & (df_year["start"] < end_week)]
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tuần", len(df_week))
-    c2.metric("Tháng", len(df_month))
-    c3.metric("Năm", len(df_year))
+    c1.metric("Tuần", dashboard_count_week)
+    c2.metric("Tháng", dashboard_count_month)
+    c3.metric("Năm", dashboard_count_year)
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
