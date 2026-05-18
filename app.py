@@ -1239,18 +1239,15 @@ elif menu == "Dashboard":
     df_f = keep_only_thong_nhat_for_calendar(df_f)
     df_year = df_f.copy()
 
-    # Thống kê Dashboard lấy từ chính dữ liệu đã lọc để hiển thị trên lịch.
+    # Thống kê Dashboard chỉ dùng chính dữ liệu đã phê duyệt "Thống nhất" đang hiển thị trên lịch.
     dashboard_month = current_date.month if "current_date" in globals() else today.month
     dashboard_year = current_date.year if "current_date" in globals() else today.year
     dashboard_count_month = len(df_year[(df_year["start"].dt.month == dashboard_month) & (df_year["start"].dt.year == dashboard_year)])
-    dashboard_count_year = len(df_year)
-    try:
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=7)
-        dashboard_count_week = len(df_year[(df_year["start"] >= week_start) & (df_year["start"] < week_end)])
-    except Exception:
-        dashboard_count_week = 0
-        st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
+    dashboard_count_year = len(df_year[df_year["start"].dt.year == dashboard_year])
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=7)
+    dashboard_count_week = len(df_year[(df_year["start"] >= week_start) & (df_year["start"] < week_end)])
+    st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(df_year)} sự kiện.")
 
     events = []
 
