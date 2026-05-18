@@ -480,14 +480,19 @@ def post_to_gsheet(payload):
         return save_pending_local(payload)
 
     try:
-        response = requests.post(url, data={"payload": json.dumps(payload, ensure_ascii=False)}, headers={"Accept": "application/json"}, timeout=30)
+        # Dùng GET query parameter để tránh một số trường hợp Google Apps Script POST trả HTML.
+        response = requests.get(
+            url,
+            params={"payload": json.dumps(payload, ensure_ascii=False)},
+            headers={"Accept": "application/json"},
+            timeout=30
+        )
     except Exception as e:
         raise RuntimeError("Không kết nối được Apps Script Web App. Vui lòng kiểm tra webhook_url trong secrets.toml.") from e
 
     if response.status_code == 403:
         raise RuntimeError(
-            "Apps Script Web App đang từ chối truy cập (403). Kiểm tra Deploy Web app: "
-            "Execute as = Me, Who has access = Anyone, sau đó Deploy lại và copy URL /exec mới."
+            "Apps Script Web App đang từ chối truy cập (403). Kiểm tra Web app: Execute as = Me, Who has access = Anyone."
         )
 
     if response.status_code >= 400:
@@ -496,20 +501,17 @@ def post_to_gsheet(payload):
     try:
         data = response.json()
     except Exception:
-        preview = response.text[:180].replace("\n", " ").replace("\r", " ")
+        preview = response.text[:220].replace("\n", " ").replace("\r", " ")
         raise RuntimeError(
-            "Apps Script không trả về JSON hợp lệ. Có thể đang dùng URL/deployment cũ hoặc Apps Script trả HTML. "
+            "Apps Script không trả về JSON hợp lệ. Cần dùng bản Apps Script mới hỗ trợ doGet(payload). "
             "Phản hồi đầu: " + preview
         )
 
     if not data.get("ok", False):
         raise RuntimeError(data.get("message", "Apps Script trả về lỗi không xác định"))
 
-    # Xóa cache để app đọc lại dữ liệu mới từ Google Sheet CSV
     st.cache_data.clear()
     return data
-
-
 
 def show_webhook_config_error():
     st.error("Chưa cấu hình Apps Script Web App URL nên app chưa ghi/cập nhật được Google Sheet.")
@@ -882,6 +884,47 @@ def load_data_no_cache():
 
     return df_raw
 
+
+def normalize_approval_value(value):
+    txt = clean_text(value)
+    if txt.lower() in ["nan", "none", "nat"]:
+        return ""
+    return txt
+
+def get_approval_series(df_input):
+    if df_input is None or len(df_input) == 0:
+        return pd.Series([], dtype=str)
+
+    candidates = [
+        "approval_opinion",
+        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
+        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
+        "Ý kiến của Phòng Hành chính Tổng hợp",
+    ]
+
+    for col in candidates:
+        if col in df_input.columns:
+            return df_input[col].apply(normalize_approval_value)
+
+    return pd.Series([""] * len(df_input), index=df_input.index, dtype=str)
+
+def filter_approved_events(df_input):
+    """Chỉ giữ sự kiện đã phê duyệt là Thống nhất."""
+    if df_input is None or len(df_input) == 0:
+        return df_input
+    df_out = df_input.copy()
+    approval = get_approval_series(df_out)
+    return df_out[approval.eq("Thống nhất") | approval.str.startswith("Thống nhất:")].copy()
+
+def filter_pending_approval_events(df_input, current_year):
+    """Giữ sự kiện năm hiện hành chưa có ý kiến phê duyệt."""
+    if df_input is None or len(df_input) == 0:
+        return df_input
+    df_out = df_input.copy()
+    approval = get_approval_series(df_out)
+    return df_out[(df_out["start"].dt.year == current_year) & (approval == "")].copy()
+
+
 # ================= DATA =================
 df = load_data()
 today = datetime.today()
@@ -912,6 +955,9 @@ selected = st.sidebar.multiselect(
 st.sidebar.write("✅ Đang chọn:", ", ".join(selected))
 
 df_f = df if "Toàn trường" in selected else df[df["donvi"].isin(selected)]
+df_all = df_f.copy()
+df_approved = filter_approved_events(df_all)
+
 df_year = df_f[df_f["start"].dt.year == today.year]
 df_month = df_year[df_year["start"].dt.month == today.month]
 
@@ -953,47 +999,8 @@ password = "MAT_KHAU_QUAN_TRI"
 
 
 
-def get_approval_series(df_input):
-    """Lấy cột phê duyệt từ dữ liệu đã chuẩn hóa hoặc từ tên cột gốc Google Sheet."""
-    if df_input is None or len(df_input) == 0:
-        return pd.Series([], dtype=str)
-
-    candidates = [
-        "approval_opinion",
-        "Ý kiến của đơn vị quản lý\n (Phòng Hành chính Tổng hợp)",
-        "Ý kiến của đơn vị quản lý (Phòng Hành chính Tổng hợp)",
-        "Ý kiến của Phòng Hành chính Tổng hợp",
-    ]
-
-    for col in candidates:
-        if col in df_input.columns:
-            return df_input[col].fillna("").astype(str).str.strip()
-
-    return pd.Series([""] * len(df_input), index=df_input.index, dtype=str)
 
 
-def filter_approved_events(df_input):
-    """Chỉ giữ sự kiện đã được phê duyệt là Thống nhất."""
-    if df_input is None or len(df_input) == 0:
-        return df_input
-
-    df_out = df_input.copy()
-    approval = get_approval_series(df_out)
-    return df_out[approval.eq("Thống nhất") | approval.str.startswith("Thống nhất:")].copy()
-
-
-def filter_pending_approval_events(df_input, current_year):
-    """Chỉ giữ sự kiện trong năm hiện hành và chưa có ý kiến phê duyệt."""
-    if df_input is None or len(df_input) == 0:
-        return df_input
-
-    df_out = df_input.copy()
-    approval = get_approval_series(df_out)
-
-    return df_out[
-        (df_out["start"].dt.year == current_year)
-        & (approval == "")
-    ].copy()
 
 # ================= ĐĂNG KÝ =================
 if menu == "Đăng ký":
@@ -1108,6 +1115,7 @@ if menu == "Đăng ký":
 
 # ================= DASHBOARD =================
 elif menu == "Dashboard":
+    df_f = df_approved.copy()
     if st.button("🔄 Làm mới dữ liệu lịch"):
         st.cache_data.clear()
         st.rerun()
@@ -1115,7 +1123,7 @@ elif menu == "Dashboard":
     try:
         fresh_dashboard_df = load_data_no_cache()
         fresh_dashboard_df = fresh_dashboard_df if "Toàn trường" in selected else fresh_dashboard_df[fresh_dashboard_df["donvi"].isin(selected)]
-        df_f = fresh_dashboard_df.copy()
+        df_f = filter_approved_events(fresh_dashboard_df.copy())
     except Exception:
         pass
     # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
@@ -1301,6 +1309,7 @@ elif menu == "Dashboard":
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
+    df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">📊 Báo cáo sự kiện theo đơn vị</div>', unsafe_allow_html=True)
 
@@ -1373,6 +1382,7 @@ elif menu == "Báo cáo":
 
 # ================= CẢNH BÁO =================
 elif menu == "Cảnh báo":
+    df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">⚠️ Trùng lịch</div>', unsafe_allow_html=True)
 
@@ -1425,6 +1435,7 @@ elif menu == "Cảnh báo":
 
 # ================= HỖ TRỢ =================
 elif menu == "Hỗ trợ":
+    df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown("")
 
@@ -1469,6 +1480,7 @@ elif menu == "Hỗ trợ":
 
 # ================= TRUY VẤN AI =================
 elif menu == "Truy vấn AI":
+    df_f = df_approved.copy()
     df_f = filter_approved_events(df_f)
     st.markdown('<div style="font-size:14px;font-weight:700;">🤖 Truy vấn AI</div>', unsafe_allow_html=True)
     q = st.text_input("Nhập câu hỏi, ví dụ: tuần, tháng, năm, hỗ trợ")
@@ -1542,9 +1554,7 @@ elif menu == "Phê duyệt":
 
     approval_df = approval_source_df.copy()
     if "approval_opinion" not in approval_df.columns:
-        approval_df["approval_opinion"] = ""
-
-    pending_df = filter_pending_approval_events(approval_df, today.year)
+        pending_df = filter_pending_approval_events(approval_df, today.year)
     pending_df = pending_df.sort_values("start", ascending=True)
 
     if len(pending_df) == 0:
