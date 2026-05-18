@@ -933,6 +933,32 @@ def filter_pending_approval_events(df_input, current_year):
         & (approvals == "")
     ].copy()
 
+
+def _approval_value_for_calendar(row):
+    """Lấy giá trị phê duyệt thật của một dòng, chịu được tên cột có xuống dòng/khoảng trắng."""
+    for col in row.index:
+        col_norm = re.sub(r"\s+", " ", str(col)).strip().lower()
+        if (
+            col == "approval_opinion"
+            or ("ý kiến" in col_norm and "phòng hành chính tổng hợp" in col_norm)
+            or ("phê duyệt" in col_norm and "ý kiến" in col_norm)
+        ):
+            value = clean_text(row.get(col, ""))
+            value = re.sub(r"\s+", " ", value).strip()
+            if value and value.lower() not in ["nan", "none", "nat"]:
+                return value
+    return ""
+
+def keep_only_thong_nhat_for_calendar(df_input):
+    """CHẶN CỨNG: lịch chỉ nhận dòng có phê duyệt đúng 'Thống nhất'."""
+    if df_input is None or len(df_input) == 0:
+        return df_input
+    df_tmp = df_input.copy()
+    approval_values = df_tmp.apply(_approval_value_for_calendar, axis=1)
+    return df_tmp[
+        approval_values.eq("Thống nhất") | approval_values.str.startswith("Thống nhất:")
+    ].copy()
+
 # ================= DATA =================
 df = load_data()
 today = datetime.today()
@@ -1184,13 +1210,14 @@ elif menu == "Dashboard":
     try:
         fresh_dashboard_df = load_data_no_cache()
         fresh_dashboard_df = fresh_dashboard_df if "Toàn trường" in selected else fresh_dashboard_df[fresh_dashboard_df["donvi"].isin(selected)]
-        df_f = filter_calendar_approved(fresh_dashboard_df.copy())
+        df_f = keep_only_thong_nhat_for_calendar(fresh_dashboard_df.copy())
     except Exception:
         pass
 
 
     # Dashboard/lịch chỉ hiển thị sự kiện đã được phê duyệt là "Thống nhất".
-    df_f = filter_calendar_approved(df_f)
+    df_f = keep_only_thong_nhat_for_calendar(df_f)
+    st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(df_f)} sự kiện.")
 
     events = []
 
