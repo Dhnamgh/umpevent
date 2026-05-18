@@ -941,13 +941,13 @@ def filter_calendar_approved(df_input):
         approval_values.eq("Thống nhất") | approval_values.str.startswith("Thống nhất:")
     ].copy()
 
-def filter_pending_approval_events(df_input, current_year):
+def filter_pending_approval_events(df_input, dashboard_year):
     if df_input is None or len(df_input) == 0:
         return df_input
     df_out = df_input.copy()
     approvals = df_out.apply(approval_text_from_row, axis=1)
     return df_out[
-        (df_out["start"].dt.year == current_year)
+        (df_out["start"].dt.year == dashboard_year)
         & (approvals == "")
     ].copy()
 
@@ -980,6 +980,8 @@ def keep_only_thong_nhat_for_calendar(df_input):
 # ================= DATA =================
 df = load_data()
 today = datetime.today()
+dashboard_month = today.month
+dashboard_year = today.year
 
 
 
@@ -1238,7 +1240,9 @@ elif menu == "Dashboard":
     df_year = df_f.copy()
 
     # Thống kê Dashboard lấy từ chính dữ liệu đã lọc để hiển thị trên lịch.
-    dashboard_count_month = len(df_year[df_year["start"].dt.month == current_month])
+    dashboard_month = current_date.month if "current_date" in globals() else today.month
+    dashboard_year = current_date.year if "current_date" in globals() else today.year
+    dashboard_count_month = len(df_year[(df_year["start"].dt.month == dashboard_month) & (df_year["start"].dt.year == dashboard_year)])
     dashboard_count_year = len(df_year)
     try:
         week_start = today - timedelta(days=today.weekday())
