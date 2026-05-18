@@ -686,35 +686,56 @@ def parse_event_date(value):
 
 
 
+
+
 # ================= APP HEADER =================
 st.markdown("""
 <style>
 .ump-fixed-header {
     background: linear-gradient(90deg, #06145f, #0b2f8a);
-    color: white;
-    padding: 14px 18px;
-    border-radius: 0 0 10px 10px;
-    margin: -1rem -1rem 18px -1rem;
+    color: #ffffff;
+    padding: 18px 24px;
+    border-radius: 10px;
+    margin: 0 0 22px 0;
     box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .ump-fixed-header .ump-vn {
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 800;
+    line-height: 1.35;
+    letter-spacing: .2px;
     text-transform: uppercase;
-    line-height: 1.25;
+    white-space: normal;
 }
 .ump-fixed-header .ump-en {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
+    line-height: 1.35;
     letter-spacing: .3px;
-    opacity: .95;
-    margin-top: 2px;
     text-transform: uppercase;
+    margin-top: 4px;
+    opacity: .95;
+    white-space: normal;
 }
 .ump-fixed-header .ump-app {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 800;
-    margin-top: 10px;
+    line-height: 1.35;
+    margin-top: 14px;
+    white-space: normal;
+}
+@media (max-width: 768px) {
+    .ump-fixed-header {
+        padding: 14px 16px;
+        min-height: 104px;
+    }
+    .ump-fixed-header .ump-vn { font-size: 16px; }
+    .ump-fixed-header .ump-en { font-size: 11px; }
+    .ump-fixed-header .ump-app { font-size: 18px; }
 }
 </style>
 
@@ -1293,6 +1314,7 @@ elif menu == "Dashboard":
         st.caption(f"Lịch chỉ hiển thị sự kiện đã phê duyệt Thống nhất: {len(approved_dashboard_df)} sự kiện.")
 
     events = []
+    event_dates_for_stats = []
 
     for idx, (_, r) in enumerate(df_year.sort_values("start").iterrows()):
         s = r["start"]
@@ -1310,6 +1332,8 @@ elif menu == "Dashboard":
             title += f"\n📍 {location}"
 
         color = event_color(idx, f"{r.get('event','')}-{s}-{location}")
+
+        event_dates_for_stats.append(s)
 
         events.append({
             "title": title,
@@ -1460,15 +1484,25 @@ elif menu == "Dashboard":
         st.write("🛠", e.get("support", ""))
 
     st.subheader("📈 Tổng quan")
-    start_week = today - timedelta(days=today.weekday())
-    start_week = start_week.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_week = start_week + timedelta(days=7)
-    df_week = df_year[(df_year["start"] >= start_week) & (df_year["start"] < end_week)]
+    # Thống kê Dashboard lấy từ chính danh sách events đã đưa lên lịch.
+    # Nếu lịch hiển thị 6 sự kiện thì Tháng không thể lớn hơn 6.
+    visible_dates = event_dates_for_stats
+
+    week_start = today - timedelta(days=today.weekday())
+    week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = week_start + timedelta(days=7)
+
+    dashboard_month = current_date.month if "current_date" in globals() else today.month
+    dashboard_year = current_date.year if "current_date" in globals() else today.year
+
+    dashboard_count_week = sum(1 for d in visible_dates if week_start <= d < week_end)
+    dashboard_count_month = sum(1 for d in visible_dates if d.month == dashboard_month and d.year == dashboard_year)
+    dashboard_count_year = sum(1 for d in visible_dates if d.year == dashboard_year)
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Tuần", len(df_week))
-    c2.metric("Tháng", len(df_year))
-    c3.metric("Năm", len(df_year))
+    c1.metric("Tuần", dashboard_count_week)
+    c2.metric("Tháng", dashboard_count_month)
+    c3.metric("Năm", dashboard_count_year)
 
 # ================= BÁO CÁO =================
 elif menu == "Báo cáo":
