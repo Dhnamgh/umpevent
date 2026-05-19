@@ -740,7 +740,7 @@ st.markdown("""
 </style>
 
 <div class="ump-fixed-header">
-  <div class="ump-vn">ĐẠI HỌC Y DƯỢC THÀNH PHỐ HỒ CHÍ MINH</div>
+  <div class="ump-vn">ĐẠI HỌC Y DƯỢC TP. HỒ CHÍ MINH</div>
   <div class="ump-en">UNIVERSITY OF MEDICINE AND PHARMACY AT HCMC</div>
   <div class="ump-app">Hệ thống quản trị sự kiện UMP</div>
 </div>
