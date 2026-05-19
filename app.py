@@ -1152,7 +1152,7 @@ if menu == "Đăng ký":
         st.stop()
 
     st.markdown('<div style="font-size:14px;font-weight:700;">📝 Đăng ký sự kiện</div>', unsafe_allow_html=True)
-    st.info("Dữ liệu đăng ký tạm thời được ghi vào Google Sheet hiện app đang đọc. Sau này lên server trường có thể đổi sang SharePoint List.")
+    st.info("Dữ liệu đăng ký thử nghiệm được ghi vào Google Sheet")
 
     # Ngày/giờ đặt ngoài form để ngày kết thúc tự đổi theo ngày tổ chức khi người dùng chọn.
     dc1, dc2 = st.columns(2)
